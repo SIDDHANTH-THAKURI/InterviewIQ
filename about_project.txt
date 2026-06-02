@@ -1,0 +1,346 @@
+Build a complete, production-ready full-stack web application called InterviewIQ — a real-time AI-powered mock interview platform where an animated AI character conducts a live, adaptive video interview using the candidate's resume, cover letter, and job description. The experience must feel indistinguishable from a real human interview.
+
+Core Experience (Non-Negotiable)
+Once the interview starts, the user never clicks anything. The AI character:
+
+Speaks naturally using real-time voice
+Listens to the user's spoken responses
+Watches the user via webcam (vision analysis)
+Adapts every next question based on what was said AND what was seen
+Wraps up naturally when done
+Auto-delivers feedback without any user action
+
+
+Tech Stack
+Frontend: Next.js 14 (App Router), TypeScript, Tailwind CSS, Framer Motion
+Backend: Next.js API routes + a standalone WebSocket server (Node.js with ws library)
+Avatar: Three.js with a rigged GLTF humanoid model (use ReadyPlayerMe free avatar or a simple stylised Three.js face with lip sync driven by audio amplitude)
+TTS (AI voice): ElevenLabs Streaming API — use eleven_turbo_v2 model for lowest latency, stream audio chunks directly to the browser via WebSocket
+STT (user voice): Deepgram Nova-2 real-time WebSocket API — open a persistent WebSocket, stream microphone audio, get transcripts back in real time with interim_results: true
+Vision: Every 3 seconds, capture a frame from the user's webcam as base64 and send it to Claude's vision API for analysis
+AI Brain: claude-opus-4-8 via Anthropic API — orchestrates everything, generates adaptive questions, analyzes vision frames, produces final feedback
+State: Zustand for global interview state
+DB: Supabase (PostgreSQL) — store sessions, transcripts, feedback
+Deploy: Vercel (frontend) + Railway (WebSocket server)
+
+Application Pages & Flow
+Page 1: Landing /
+A stunning, editorial-style landing page. NOT generic AI purple gradients. Go for a refined, high-contrast design — think brutalist editorial meets premium SaaS. Use a strong display font (e.g. Playfair Display or Clash Display) paired with a clean sans-serif body. Cream/off-white background with sharp black typography and a single electric accent color (amber or cobalt). Animated text reveals on load. One CTA: "Start Interview".
+Page 2: Setup /setup
+Three-step setup (no page reloads, just animated step transitions):
+Step 1 — Upload Documents
+
+Drag-and-drop upload zones for: Resume (PDF), Cover Letter (PDF or text), Job Description (paste text or upload PDF)
+Parse PDFs client-side using pdf-parse or pdfjs-dist
+Store extracted text in Zustand
+
+Step 2 — Interview Configuration
+
+Interview type: Behavioral / Technical / Mixed
+Difficulty: Entry / Mid / Senior / Brutal (affects how hard the AI pushes back)
+Duration: 10 min / 20 min / 30 min
+Interviewer personality: Friendly, Neutral, Tough, Silent (long pauses, minimal encouragement)
+
+Step 3 — Camera & Mic Check
+
+Show live webcam preview
+Show live mic level visualiser (animated bars)
+Confirm everything works
+Button: "Begin Interview" — last button ever clicked
+
+Page 3: Interview Room /interview
+This is the core. Full-screen, immersive.
+Layout:
+
+Left 60%: AI interviewer — Three.js canvas with the animated avatar, microphone/speaking indicator, subtle ambient animation (breathing idle state)
+Right 40%: User's live webcam feed (small, tasteful — like a video call pip), with a subtle live transcript appearing below it as they speak
+Bottom bar: Session timer, a discreet "End Interview Early" option hidden unless hovered
+NO other UI elements. Nothing to click. Nothing to read. Just the conversation.
+
+Avatar behaviour:
+
+Idle: subtle breathing animation, occasional blink
+Thinking: slight head tilt, eyes shift slightly, a soft "thinking" audio cue
+Speaking: jaw moves driven by real-time audio amplitude from ElevenLabs stream
+Listening: leans slightly forward, nods occasionally triggered by transcript events
+
+Page 4: Feedback /feedback
+Auto-loads the moment the interview concludes. Animated entry.
+Sections:
+
+Overall Score — circular progress with animated fill, grade A–F
+Dimension Breakdown — radar/spider chart: Communication, Technical Depth, Confidence, Relevance, Structure
+Moment-by-Moment Replay — scrollable transcript with AI annotations on each answer (colour-coded: strong / weak / missed opportunity)
+Vision Report — what the AI saw: eye contact score, body language summary, presentation notes
+What to Fix — 3 prioritised, brutally honest action items
+Download PDF Report button
+
+
+Real-Time Architecture
+WebSocket Server (/server/ws.ts)
+Single persistent WebSocket connection per interview session. Handles all real-time events:
+CLIENT → SERVER events:
+- interview:start { sessionId, resumeText, coverLetterText, jobDescription, config }
+- audio:chunk { data: ArrayBuffer } — raw microphone PCM audio
+- vision:frame { data: base64string } — webcam frame every 3 seconds
+- interview:end
+
+SERVER → CLIENT events:
+- avatar:speaking:start
+- avatar:speaking:end
+- audio:tts:chunk { data: ArrayBuffer } — ElevenLabs audio chunk
+- transcript:interim { text }
+- transcript:final { text }
+- vision:analysis { eyeContact, bodyLanguage, confidence, notes }
+- ai:thinking — triggers avatar thinking animation
+- interview:question { text } — for transcript display
+- interview:complete { feedbackJson }
+Interview Orchestration Logic (/server/interviewer.ts)
+This is the brain. A class InterviewOrchestrator that:
+
+On interview:start:
+
+Builds a rich system prompt from resume + JD + cover letter + config
+Sends opening message to ElevenLabs TTS, streams audio back
+Opens Deepgram STT WebSocket
+
+
+On receiving final transcript from Deepgram:
+
+Appends to conversation history
+Calls Claude with full conversation history + latest vision analysis
+Claude decides: next question OR follow-up probe OR topic shift OR wrap-up
+Streams Claude response to ElevenLabs
+Streams TTS audio back to client
+
+
+On vision:frame:
+
+Every 3 seconds sends frame to Claude Vision (separate lightweight call)
+Extracts: eye contact (looking at camera?), posture, expression (confident/nervous/confused)
+Stores latest vision context, injects into next Claude call as additional context
+
+
+Adaptive difficulty logic:
+
+Tracks answer quality score per response (Claude rates it internally 1–10)
+If 3 consecutive strong answers → escalate difficulty
+If answer shows confusion → ask a clarifying follow-up before moving on
+If eye contact drops during a specific answer → Claude notes it and may probe that topic
+
+
+
+Claude System Prompt Template
+You are [Name], a senior [role based on JD] conducting a real job interview for the position of [job title] at [company if mentioned].
+
+Candidate profile:
+RESUME: {resumeText}
+COVER LETTER: {coverLetterText}
+JOB DESCRIPTION: {jobDescription}
+
+Interview config:
+- Type: {type}
+- Difficulty: {difficulty}
+- Personality: {personality}
+- Target duration: {duration}
+
+Current vision context: {latestVisionAnalysis}
+
+Rules:
+- Speak naturally, like a real human interviewer. No bullet points, no lists — pure conversational speech.
+- Ask ONE question or make ONE comment at a time.
+- Reference specific things from their resume and cover letter naturally.
+- If their last answer was weak, probe it. Don't move on.
+- If vision shows confusion, acknowledge it naturally ("Take your time" or rephrase).
+- If vision shows low eye contact on a sensitive question, you may naturally revisit it.
+- Vary your pacing. Sometimes react before asking the next question. Sometimes be silent for a beat.
+- When it is time to end (based on duration and natural flow), close the interview gracefully and naturally.
+- After closing say exactly: [INTERVIEW_COMPLETE] — this is a signal token, not spoken.
+- You are NOT an AI assistant. You are a human interviewer. Never break character.
+
+Conversation so far:
+{conversationHistory}
+
+Latest candidate response: {lastResponse}
+ElevenLabs TTS Integration
+
+Use ElevenLabs Streaming API with WebSocket
+Voice: choose a professional, calm voice (e.g. Rachel or Adam)
+Stream audio chunks in real time back to client
+Client plays chunks via Web Audio API in sequence with no gaps
+Amplitude of audio stream drives the avatar jaw animation
+
+Deepgram STT Integration
+
+Open Deepgram WebSocket on interview start
+Stream raw PCM audio from user's microphone (MediaRecorder or AudioWorklet)
+Use params: model: nova-2, interim_results: true, endpointing: 300, utterance_end_ms: 1000
+On utterance_end event → treat as final answer → trigger Claude call
+Interim results → show in live transcript on client
+
+Vision Analysis (Claude Vision)
+Every 3 seconds client sends a base64 webcam frame. Server calls Claude with:
+Analyze this video frame of a job interview candidate. In JSON respond with:
+{
+  "eyeContact": "strong|moderate|weak|none",
+  "posture": "confident|neutral|slouched|tense",
+  "expression": "calm|nervous|confused|engaged|blank",
+  "presentation": "professional|casual|unprofessional",
+  "notes": "one brief observation if notable, else null"
+}
+Respond ONLY with JSON.
+
+Avatar Implementation (Three.js)
+Use a ReadyPlayerMe GLB avatar or build a stylised abstract humanoid face:
+
+Load GLB with GLTFLoader
+Morph targets for: mouthOpen, eyeBlinkLeft, eyeBlinkRight, jawForward
+Idle animation loop: subtle body sway, breathing (chest scale Y), random blinks every 3–6 seconds
+Speaking: drive mouthOpen and jawForward morph targets from real-time audio amplitude using Web Audio API AnalyserNode
+Thinking: play a slow head tilt tween using Tween.js or GSAP
+Listening: subtle forward lean, periodic slow nod (triggered randomly while STT is active)
+Three-point lighting: key light, fill light, rim light — clean, professional look
+Background: soft gradient or blurred office environment (CSS or Three.js plane with texture)
+
+If ReadyPlayerMe avatar GLB is unavailable, build a stylised abstract face from Three.js primitives (sphere head, cylinder neck, plane eyes) that still does lip sync and blinks. Still looks good, still feels alive.
+
+Feedback Generation
+When [INTERVIEW_COMPLETE] is detected:
+Call Claude once more with the full transcript + all vision analyses + config, asking for structured JSON feedback:
+json{
+  "overallScore": 78,
+  "grade": "B+",
+  "dimensions": {
+    "communication": 82,
+    "technicalDepth": 71,
+    "confidence": 75,
+    "relevance": 85,
+    "structure": 70
+  },
+  "answerAnnotations": [
+    {
+      "question": "...",
+      "answer": "...",
+      "quality": "strong|weak|missed",
+      "annotation": "..."
+    }
+  ],
+  "visionReport": {
+    "eyeContactScore": 65,
+    "bodyLanguageSummary": "...",
+    "presentationNotes": "..."
+  },
+  "topThreeImprovements": [
+    "...", "...", "..."
+  ],
+  "strengths": ["...", "..."],
+  "overallSummary": "..."
+}
+Render this in the feedback page with animated charts (use Recharts for radar chart, custom SVG for circular score).
+
+Environment Variables Required
+ANTHROPIC_API_KEY=
+ELEVENLABS_API_KEY=
+ELEVENLABS_VOICE_ID=
+DEEPGRAM_API_KEY=
+NEXT_PUBLIC_WS_URL=
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+
+Design Direction
+
+Theme: Light, editorial, premium. Off-white (#FAFAF8) base. Near-black (#111) typography. Single accent: electric amber (#F59E0B) or cobalt (#2563EB). Pick one and commit.
+Fonts: Clash Display or Playfair Display for headings. DM Sans or Instrument Sans for body. Import from Google Fonts or Fontshare.
+NO dark backgrounds anywhere by default.
+Motion: Framer Motion for all page transitions, step transitions in setup, feedback section reveals. Staggered animations on load.
+Interview room: The only place that's darker — deep charcoal background (#1C1C1E) to make the avatar pop and feel cinematic. Everywhere else: light.
+Shadows: Soft, layered. No harsh drop shadows.
+Borders: Subtle 1px borders (#E5E5E3) for cards. Rounded corners (12–16px).
+
+
+File Structure
+/
+├── app/
+│   ├── page.tsx                    # Landing
+│   ├── setup/page.tsx              # Setup flow
+│   ├── interview/page.tsx          # Interview room
+│   └── feedback/page.tsx           # Feedback
+├── components/
+│   ├── avatar/
+│   │   ├── AvatarCanvas.tsx        # Three.js canvas wrapper
+│   │   ├── useAvatarControls.ts    # Lip sync, blink, idle hooks
+│   │   └── avatarLoader.ts         # GLB loader
+│   ├── interview/
+│   │   ├── WebcamFeed.tsx
+│   │   ├── LiveTranscript.tsx
+│   │   ├── SessionTimer.tsx
+│   │   └── AudioVisualiser.tsx
+│   ├── feedback/
+│   │   ├── ScoreCircle.tsx
+│   │   ├── RadarChart.tsx
+│   │   ├── TranscriptAnnotations.tsx
+│   │   └── VisionReport.tsx
+│   └── setup/
+│       ├── DocumentUpload.tsx
+│       ├── ConfigStep.tsx
+│       └── MediaCheck.tsx
+├── server/
+│   ├── ws.ts                       # WebSocket server
+│   ├── interviewer.ts              # Orchestration logic
+│   ├── tts.ts                      # ElevenLabs integration
+│   ├── stt.ts                      # Deepgram integration
+│   └── vision.ts                   # Claude vision calls
+├── hooks/
+│   ├── useWebSocket.ts
+│   ├── useMicrophone.ts
+│   ├── useWebcam.ts
+│   └── useAudioPlayer.ts
+├── store/
+│   └── interviewStore.ts           # Zustand store
+├── lib/
+│   ├── claude.ts                   # Anthropic client
+│   ├── parsePDF.ts                 # PDF text extraction
+│   └── supabase.ts
+└── types/
+    └── interview.ts
+
+Build Order for Claude Code
+
+Project scaffold (Next.js + dependencies install)
+Zustand store + types
+PDF parser utility
+Setup page (all 3 steps, animations)
+WebSocket server skeleton
+Deepgram STT integration
+ElevenLabs TTS streaming integration
+Claude orchestrator with system prompt builder
+Avatar (Three.js — start simple, add lip sync)
+Interview room page (layout, webcam, transcript)
+Vision frame capture + Claude Vision analysis
+Feedback JSON generation
+Feedback page (charts, annotations)
+Landing page (last — design polish)
+End-to-end test with real APIs
+Deploy config (Vercel + Railway)
+
+
+Critical Behaviour Rules
+
+The avatar must NEVER be silent between turns. If Claude is processing, play a subtle "thinking" audio cue (a soft hum or breath) and trigger the thinking animation.
+Audio chunks from ElevenLabs must play gaplessly — buffer and chain them via Web Audio API.
+Deepgram interim transcripts show live on screen but never trigger Claude. Only utterance_end or speech_final triggers Claude.
+Vision frames are sent every 3 seconds regardless of speaking state. Vision analysis never blocks the conversation flow.
+The interview session must be recoverable — save transcript to Supabase every 30 seconds so a page refresh doesn't lose the session.
+On mobile: graceful fallback message ("Best experienced on desktop with camera and microphone").
+All API keys are server-side only. Never expose to client.
+
+
+What Makes This Extraordinary
+This is not a chatbot with a face slapped on it. It is a synchronized multi-modal real-time system where:
+
+Voice output drives avatar animation frame-by-frame
+Vision input shapes conversational decisions in real time
+Speech recognition drives conversation flow without any user action
+Every interview is genuinely different based on the actual documents provided
+
+Build it like you are shipping it to 100,000 users tomorrow.

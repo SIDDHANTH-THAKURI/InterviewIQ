@@ -1,0 +1,50 @@
+{
+  "name": "interviewiq",
+  "version": "1.0.0",
+  "private": true,
+  "description": "InterviewIQ — a real-time, AI-powered mock interview platform with a live animated interviewer.",
+  "scripts": {
+    "dev": "concurrently -n next,ws -c blue,magenta \"next dev\" \"tsx watch server/ws.ts\"",
+    "dev:web": "next dev",
+    "dev:ws": "tsx watch server/ws.ts",
+    "server": "tsx server/ws.ts",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.3",
+    "@elevenlabs/elevenlabs-js": "^2.49.1",
+    "@supabase/supabase-js": "^2.43.4",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.2.12",
+    "jspdf": "^2.5.1",
+    "lucide-react": "^0.395.0",
+    "next": "14.2.5",
+    "pdfjs-dist": "4.4.168",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "three": "^0.165.0",
+    "ws": "^8.17.1",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.165.0",
+    "@types/ws": "^8.5.10",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.4.5",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.4",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
+}

@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* The single committed accent. Swap these two lines for cobalt
+     (--accent: #2563EB; --accent-ink: #1E3A8A;) and the whole app follows. */
+  --accent: #f59e0b;
+  --accent-ink: #b45309;
+
+  --cream: #fafaf8;
+  --ink: #111111;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--cream);
+    color: var(--ink);
+    font-feature-settings: "ss01", "cv01", "cv11";
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* Refined, low-contrast scrollbars that suit the editorial palette */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d8d8d4 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #d8d8d4;
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: #c4c4be;
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* Editorial display heading helper */
+  .display {
+    font-family: var(--font-display), Georgia, serif;
+    letter-spacing: -0.03em;
+    line-height: 0.95;
+  }
+
+  /* Thin uppercase eyebrow label used across pages */
+  .eyebrow {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-size: 0.72rem;
+    font-weight: 500;
+  }
+
+  /* Subtle paper card */
+  .card {
+    background: var(--paper, #fff);
+    border: 1px solid #e5e5e3;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(17, 17, 17, 0.04),
+      0 8px 24px -12px rgba(17, 17, 17, 0.1);
+  }
+
+  /* Primary CTA — sharp, high-contrast, editorial */
+  .btn-primary {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    background: var(--ink);
+    color: var(--cream);
+    border-radius: 999px;
+    padding: 0.95rem 1.75rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.25s ease, background 0.25s ease;
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 32px -16px rgba(17, 17, 17, 0.6);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid #e5e5e3;
+    border-radius: 999px;
+    padding: 0.85rem 1.4rem;
+    background: transparent;
+    transition: border-color 0.2s ease, background 0.2s ease,
+      transform 0.2s ease;
+  }
+  .btn-ghost:hover {
+    border-color: #111;
+    transform: translateY(-1px);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  /* Fine grain/noise overlay for a tactile, printed feel */
+  .grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.4;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  }
+  .accent-underline {
+    background-image: linear-gradient(var(--accent), var(--accent));
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    background-size: 100% 0.12em;
+  }
+}
