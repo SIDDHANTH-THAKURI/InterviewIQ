@@ -21,6 +21,7 @@ import {
   AUTOSAVE_INTERVAL_MS,
   MIC_SAMPLE_RATE,
   type ClientStartMessage,
+  type CvMetrics,
   type InterviewConfig,
   type InterviewDocuments,
   type InterviewFeedback,
@@ -93,6 +94,7 @@ export class InterviewOrchestrator {
   private finalBuffer = "";
   private latestVision: VisionAnalysis | null = null;
   private visionHistory: VisionAnalysis[] = [];
+  private cvMetrics: CvMetrics | null = null;
 
   private stt: STTConnection | null = null;
   private tts: ElevenLabsTTS | null = null;
@@ -231,6 +233,12 @@ export class InterviewOrchestrator {
       .catch(() => {
         this.analyzing = false;
       });
+  }
+
+  /** Receive aggregated in-browser CV metrics (the "model's perspective"). */
+  handleCvMetrics(metrics: CvMetrics) {
+    if (this.closed) return;
+    this.cvMetrics = metrics;
   }
 
   /** Client browser finished playing the audio — now arm silence detection. */
@@ -467,7 +475,7 @@ export class InterviewOrchestrator {
   private async generateFeedback(): Promise<InterviewFeedback> {
     const transcript = this.buildTranscript();
     try {
-      const resp = await getAnthropic().messages.create({
+      const resp = await getAnthropic(this.sessionKeys.anthropic).messages.create({
         model: FEEDBACK_MODEL,
         max_tokens: 2048,
         system: FEEDBACK_SYSTEM_PROMPT,
@@ -477,6 +485,7 @@ export class InterviewOrchestrator {
             content: buildFeedbackUserPrompt({
               transcript,
               visionAnalyses: this.visionHistory,
+              cvMetrics: this.cvMetrics,
               config: this.config,
             }),
           },
@@ -486,12 +495,16 @@ export class InterviewOrchestrator {
       const text = block && "text" in block ? block.text : "";
       const parsed = extractJson<InterviewFeedback>(text);
       if (parsed && parsed.dimensions && Array.isArray(parsed.topThreeImprovements)) {
-        return normalizeFeedback(parsed);
+        const fb = normalizeFeedback(parsed);
+        if (this.cvMetrics) fb.visionReport.liveMetrics = this.cvMetrics;
+        return fb;
       }
     } catch (err) {
       console.warn("[feedback]", (err as Error).message);
     }
-    return this.fallbackFeedback(transcript);
+    const fb = this.fallbackFeedback(transcript);
+    if (this.cvMetrics) fb.visionReport.liveMetrics = this.cvMetrics;
+    return fb;
   }
 
   private buildTranscript(): TranscriptTurn[] {

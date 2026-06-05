@@ -62,6 +62,9 @@ wss.on("connection", (ws) => {
       case "playback:complete":
         orchestrator.handlePlaybackComplete();
         break;
+      case "cv:metrics":
+        orchestrator.handleCvMetrics(msg.metrics);
+        break;
       case "interview:end":
         orchestrator.end();
         break;

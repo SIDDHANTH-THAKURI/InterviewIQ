@@ -5,7 +5,6 @@ import { useInterviewStore } from "@/store/interviewStore";
 import {
   type Difficulty,
   type DurationMinutes,
-  type InterviewMode,
   type InterviewType,
   type Personality,
 } from "@/types/interview";
@@ -15,29 +14,6 @@ interface Opt<T> {
   value: T;
   label: string;
 }
-
-const MODES: { value: InterviewMode; label: string; caption: string }[] = [
-  {
-    value: "standard",
-    label: "Full interview",
-    caption: "AI uses your resume, cover letter and job description.",
-  },
-  {
-    value: "resume-only",
-    label: "Resume & role",
-    caption: "Just your resume and the role name — AI fills in the rest.",
-  },
-  {
-    value: "blind",
-    label: "Blind / mystery",
-    caption: "No context given. The AI discovers who you are through conversation.",
-  },
-  {
-    value: "custom",
-    label: "Custom",
-    caption: "Describe exactly the interview you want.",
-  },
-];
 
 const TYPES: Opt<InterviewType>[] = [
   { value: "behavioral", label: "Behavioral" },
@@ -85,67 +61,6 @@ export function ConfigStep() {
 
   return (
     <div className="space-y-10">
-      {/* Mode */}
-      <Group label="Interview mode">
-        <div className="grid gap-3 sm:grid-cols-2">
-          {MODES.map((m) => {
-            const active = config.mode === m.value;
-            return (
-              <button
-                key={m.value}
-                type="button"
-                onClick={() => setConfig({ mode: m.value })}
-                className={cn(
-                  "rounded-card border p-4 text-left transition-all duration-200",
-                  active
-                    ? "border-ink bg-ink text-cream shadow-soft"
-                    : "border-line bg-paper text-ink hover:border-ink/40"
-                )}
-              >
-                <p className="font-medium">{m.label}</p>
-                <p className={cn("mt-1 text-sm", active ? "text-cream/70" : "text-muted")}>
-                  {m.caption}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Custom prompt textarea */}
-        {config.mode === "custom" && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4"
-          >
-            <textarea
-              value={config.customPrompt ?? ""}
-              onChange={(e) => setConfig({ customPrompt: e.target.value })}
-              placeholder="e.g. 'A senior product manager interview at a late-stage startup, focus on strategy, metrics and cross-functional leadership. Be skeptical.'"
-              rows={4}
-              className="w-full resize-y rounded-card border border-line bg-paper p-4 text-sm leading-relaxed text-ink outline-none transition-colors placeholder:text-muted focus:border-ink"
-            />
-          </motion.div>
-        )}
-
-        {/* Job role field for resume-only */}
-        {config.mode === "resume-only" && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4"
-          >
-            <input
-              type="text"
-              value={config.jobRole ?? ""}
-              onChange={(e) => setConfig({ jobRole: e.target.value })}
-              placeholder="Job role or title — e.g. Senior Backend Engineer"
-              className="w-full rounded-card border border-line bg-paper px-4 py-3 text-sm text-ink outline-none transition-colors placeholder:text-muted focus:border-ink"
-            />
-          </motion.div>
-        )}
-      </Group>
-
       <Group label="Interview type">
         <Chips options={TYPES} selected={config.type} onSelect={(type) => setConfig({ type })} />
       </Group>

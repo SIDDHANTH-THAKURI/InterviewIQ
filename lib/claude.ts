@@ -238,12 +238,14 @@ export const FEEDBACK_SYSTEM_PROMPT =
 export interface FeedbackPromptParams {
   transcript: TranscriptTurn[];
   visionAnalyses: VisionAnalysis[];
+  cvMetrics?: import("../types/interview").CvMetrics | null;
   config: InterviewConfig;
 }
 
 export function buildFeedbackUserPrompt({
   transcript,
   visionAnalyses,
+  cvMetrics,
   config,
 }: FeedbackPromptParams): string {
   const convo = transcript
@@ -254,14 +256,26 @@ export function buildFeedbackUserPrompt({
 
   const visionSummary = summarizeVision(visionAnalyses);
 
+  const metricsBlock = cvMetrics
+    ? `LIVE CAMERA METRICS (precise, measured continuously in-browser — trust these for the visual scores):
+- Eye contact: ${cvMetrics.eyeContactPct}% of the time looking at camera
+- On-screen presence: ${cvMetrics.presentPct}%
+- Blink rate: ${cvMetrics.blinksPerMin}/min (15-20 is calm; 30+ suggests nerves)
+- Smiling: ${cvMetrics.smilePct}% of the time
+- Head steadiness: ${cvMetrics.headSteadiness}/100 (low = fidgety/restless)
+- Overall engagement: ${cvMetrics.engagement}/100`
+    : "LIVE CAMERA METRICS: (not available)";
+
   return `Below is the full transcript of a ${DIFFICULTY_LABELS[config.difficulty]} ${INTERVIEW_TYPE_LABELS[
     config.type
-  ]} interview, plus an aggregate of vision reads taken every few seconds.
+  ]} interview. You have TWO sources on the candidate's on-camera presence: precise live metrics measured every frame, and periodic qualitative vision snapshots. Combine BOTH for the visionReport — let the live metrics drive eyeContactScore, and use the qualitative reads + metrics for the body-language and presentation narrative.
 
 TRANSCRIPT:
 ${convo || "(empty)"}
 
-VISION AGGREGATE:
+${metricsBlock}
+
+QUALITATIVE VISION SNAPSHOTS:
 ${visionSummary}
 
 Produce honest, specific feedback as a single JSON object with EXACTLY this shape and key names:

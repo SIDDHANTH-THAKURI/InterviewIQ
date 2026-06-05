@@ -6,25 +6,55 @@ import type { VisionReport as VisionReportType } from "@/types/interview";
 import { EASE } from "@/components/ui/Reveal";
 
 export function VisionReport({ report }: { report: VisionReportType }) {
+  const m = report.liveMetrics;
   return (
-    <div className="grid gap-6 md:grid-cols-[auto_1fr]">
-      {/* Eye contact gauge */}
-      <div className="flex flex-col items-center justify-center rounded-card border border-line bg-paper p-6">
-        <EyeContactGauge score={report.eyeContactScore} />
-        <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
-          <Eye className="h-4 w-4" /> Eye contact
-        </p>
+    <div className="space-y-6">
+      <div className="grid gap-6 md:grid-cols-[auto_1fr]">
+        {/* Eye contact gauge */}
+        <div className="flex flex-col items-center justify-center rounded-card border border-line bg-paper p-6">
+          <EyeContactGauge score={report.eyeContactScore} />
+          <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
+            <Eye className="h-4 w-4" /> Eye contact
+          </p>
+        </div>
+
+        {/* Notes */}
+        <div className="space-y-5">
+          <Block icon={User} title="Body language">
+            {report.bodyLanguageSummary}
+          </Block>
+          <Block icon={Sparkles} title="Presentation">
+            {report.presentationNotes}
+          </Block>
+        </div>
       </div>
 
-      {/* Notes */}
-      <div className="space-y-5">
-        <Block icon={User} title="Body language">
-          {report.bodyLanguageSummary}
-        </Block>
-        <Block icon={Sparkles} title="Presentation">
-          {report.presentationNotes}
-        </Block>
-      </div>
+      {/* Live tracking metrics (measured on-device, every frame) */}
+      {m && (
+        <div className="rounded-card border border-line bg-paper p-5">
+          <p className="mb-4 flex items-center gap-2 text-sm font-medium">
+            <Eye className="h-4 w-4 text-accent" /> Live tracking
+            <span className="text-xs font-normal text-muted">· measured on-device</span>
+          </p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Stat label="Eye contact" value={`${m.eyeContactPct}%`} />
+            <Stat label="Engagement" value={`${m.engagement}/100`} />
+            <Stat label="Blink rate" value={`${m.blinksPerMin}/min`} />
+            <Stat label="Steadiness" value={`${m.headSteadiness}/100`} />
+            <Stat label="Smiling" value={`${m.smilePct}%`} />
+            <Stat label="On screen" value={`${m.presentPct}%`} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="display text-2xl font-semibold text-ink">{value}</p>
+      <p className="mt-0.5 text-xs text-muted">{label}</p>
     </div>
   );
 }

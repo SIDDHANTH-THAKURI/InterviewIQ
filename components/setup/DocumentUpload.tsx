@@ -22,8 +22,11 @@ const initialMeta: Record<DocKey, FieldMeta> = {
 
 export function DocumentUpload() {
   const documents = useInterviewStore((s) => s.documents);
+  const config = useInterviewStore((s) => s.config);
   const setDocuments = useInterviewStore((s) => s.setDocuments);
+  const setConfig = useInterviewStore((s) => s.setConfig);
   const [meta, setMeta] = useState(initialMeta);
+  const mode = config.mode;
 
   const patchMeta = useCallback((key: DocKey, m: Partial<FieldMeta>) => {
     setMeta((prev) => ({ ...prev, [key]: { ...prev[key], ...m } }));
@@ -55,6 +58,52 @@ export function DocumentUpload() {
     [setDocuments]
   );
 
+  // resume-only: show resume + role field
+  if (mode === "resume-only") {
+    return (
+      <div className="space-y-6">
+        <DropZone
+          title="Resume"
+          hint="PDF — parsed privately in your browser"
+          accept=".pdf,application/pdf"
+          required
+          value={documents.resumeText}
+          meta={meta.resumeText}
+          onFile={(f) => handleFile("resumeText", f)}
+          onClear={() => clearField("resumeText")}
+        />
+        <div>
+          <span className="eyebrow text-muted">Job role <span className="text-accent">*</span></span>
+          <input
+            type="text"
+            value={config.jobRole ?? ""}
+            onChange={(e) => setConfig({ jobRole: e.target.value })}
+            placeholder="e.g. Senior Backend Engineer, Product Manager at a fintech startup…"
+            className="mt-3 w-full rounded-card border border-line bg-paper px-4 py-3 text-sm text-ink outline-none transition-colors placeholder:text-muted focus:border-ink"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // custom: show only the prompt textarea
+  if (mode === "custom") {
+    return (
+      <div>
+        <span className="eyebrow text-muted">Describe your interview <span className="text-accent">*</span></span>
+        <textarea
+          value={config.customPrompt ?? ""}
+          onChange={(e) => setConfig({ customPrompt: e.target.value })}
+          placeholder="e.g. 'A senior product manager interview at a late-stage startup. Focus on strategy, metrics and cross-functional leadership. Be tough but fair.'"
+          rows={7}
+          className="mt-3 w-full resize-y rounded-card border border-line bg-paper p-4 text-sm leading-relaxed text-ink outline-none transition-colors placeholder:text-muted focus:border-ink"
+        />
+        <p className="mt-2 text-xs text-muted">{(config.customPrompt ?? "").length} chars — 20 minimum to continue.</p>
+      </div>
+    );
+  }
+
+  // standard: all three fields
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <DropZone

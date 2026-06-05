@@ -13,30 +13,27 @@ export default function KeysPage() {
   const router = useRouter();
   const [anthropic, setAnthropic] = useState("");
   const [elevenlabs, setElevenlabs] = useState("");
-  const [deepgram, setDeepgram] = useState("");
   const [showAnthropic, setShowAnthropic] = useState(false);
   const [showElevenlabs, setShowElevenlabs] = useState(false);
-  const [showDeepgram, setShowDeepgram] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const k = loadKeys();
     if (k.anthropic) setAnthropic(k.anthropic);
     if (k.elevenlabs) setElevenlabs(k.elevenlabs);
-    if (k.deepgram) setDeepgram(k.deepgram || "");
   }, []);
 
   const canSave = anthropic.trim().length > 10 && elevenlabs.trim().length > 10;
 
   const handleSave = () => {
-    saveKeys({ anthropic: anthropic.trim(), elevenlabs: elevenlabs.trim(), deepgram: deepgram.trim() || undefined });
+    saveKeys({ anthropic: anthropic.trim(), elevenlabs: elevenlabs.trim() });
     setSaved(true);
     setTimeout(() => router.push("/setup"), 900);
   };
 
   const handleClear = () => {
     clearKeys();
-    setAnthropic(""); setElevenlabs(""); setDeepgram("");
+    setAnthropic(""); setElevenlabs("");
     setSaved(false);
   };
 
@@ -81,7 +78,7 @@ export default function KeysPage() {
           />
           <KeyField
             label="ElevenLabs API Key"
-            hint="Voices the interviewer in real time"
+            hint="Voices the interviewer AND transcribes your speech. Enable both 'Text to Speech' and 'Speech to Text' permissions on the key."
             placeholder="sk_..."
             value={elevenlabs}
             onChange={setElevenlabs}
@@ -90,17 +87,6 @@ export default function KeysPage() {
             docsUrl="https://elevenlabs.io/app/settings/api-keys"
             docsLabel="Get key →"
             required
-          />
-          <KeyField
-            label="Deepgram API Key"
-            hint="Transcribes your voice in real time (optional — ElevenLabs STT used if omitted)"
-            placeholder="..."
-            value={deepgram}
-            onChange={setDeepgram}
-            show={showDeepgram}
-            onToggleShow={() => setShowDeepgram((v) => !v)}
-            docsUrl="https://console.deepgram.com/project"
-            docsLabel="Get key →"
           />
         </motion.div>
 
@@ -124,7 +110,7 @@ export default function KeysPage() {
               <>Save &amp; continue <ArrowRight className="h-4 w-4" /></>
             )}
           </button>
-          {(anthropic || elevenlabs || deepgram) && (
+          {(anthropic || elevenlabs) && (
             <button
               onClick={handleClear}
               className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"

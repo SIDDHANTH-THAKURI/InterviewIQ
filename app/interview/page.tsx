@@ -16,7 +16,7 @@ import { WebcamFeed } from "@/components/interview/WebcamFeed";
 import { LiveTranscript } from "@/components/interview/LiveTranscript";
 import { SessionTimer } from "@/components/interview/SessionTimer";
 import type { AvatarState } from "@/components/avatar/useAvatarControls";
-import { VISION_INTERVAL_MS, type ServerMessage } from "@/types/interview";
+import { VISION_INTERVAL_MS, CV_METRICS_INTERVAL_MS, type ServerMessage } from "@/types/interview";
 
 const AvatarCanvas = dynamic(
   () => import("@/components/avatar/AvatarCanvas").then((m) => m.AvatarCanvas),
@@ -58,6 +58,8 @@ export default function InterviewPage() {
   const speakingRef = useRef(false);
   const startSentRef = useRef(false);
   const visionTimer = useRef<number | null>(null);
+  const cvTimer = useRef<number | null>(null);
+  const trackerRef = useRef<import("@/lib/visionTracker").VisionTracker | null>(null);
   const cleanupRef = useRef<() => void>(() => {});
 
   /* ── Server → client messages ── */
@@ -169,6 +171,12 @@ export default function InterviewPage() {
       clearInterval(visionTimer.current);
       visionTimer.current = null;
     }
+    if (cvTimer.current) {
+      clearInterval(cvTimer.current);
+      cvTimer.current = null;
+    }
+    trackerRef.current?.stop();
+    trackerRef.current = null;
     mic.stop();
     webcam.stop();
     player.stopCue();
@@ -189,18 +197,31 @@ export default function InterviewPage() {
       setBlocked("mobile");
       return;
     }
-    if (!sessionId || !documents.resumeText) {
+    if (!sessionId) {
       router.replace("/setup");
       return;
     }
     let cancelled = false;
     player.unlock();
     // Start media BEFORE connecting so we know the mic's true sample rate to
-    // send to Deepgram (clean, un-resampled audio = better transcription).
+    // send to STT (clean, un-resampled audio = better transcription).
     (async () => {
       await webcam.start();
       await mic.start();
-      if (!cancelled) ws.connect();
+      if (cancelled) return;
+      ws.connect();
+      // Spin up the in-browser CV tracker (best-effort; non-blocking).
+      try {
+        const { VisionTracker } = await import("@/lib/visionTracker");
+        const tracker = new VisionTracker();
+        const ok = await tracker.init();
+        if (ok && !cancelled && webcam.videoRef.current) {
+          trackerRef.current = tracker;
+          tracker.start(webcam.videoRef.current);
+        }
+      } catch {
+        /* CV is optional — interview works without it */
+      }
     })();
     return () => {
       cancelled = true;
@@ -231,21 +252,35 @@ export default function InterviewPage() {
           if (frame) ws.sendJSON({ type: "vision:frame", data: frame });
         }, VISION_INTERVAL_MS);
       }
+      // Push aggregated in-browser CV metrics to the server periodically.
+      if (!cvTimer.current) {
+        cvTimer.current = window.setInterval(() => {
+          const t = trackerRef.current;
+          if (t) ws.sendJSON({ type: "cv:metrics", metrics: t.getMetrics() });
+        }, CV_METRICS_INTERVAL_MS);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws.status, blocked, sessionId]);
 
+  const flushMetrics = useCallback(() => {
+    const t = trackerRef.current;
+    if (t) ws.sendJSON({ type: "cv:metrics", metrics: t.getMetrics() });
+  }, [ws]);
+
   const endEarly = useCallback(() => {
     if (endedRef.current) return;
     setStatus("wrapping");
+    flushMetrics();
     ws.sendJSON({ type: "interview:end" });
-  }, [ws]);
+  }, [ws, flushMetrics]);
 
   const onTimerElapsed = useCallback(() => {
     if (endedRef.current || status === "wrapping") return;
     setStatus("wrapping");
+    flushMetrics();
     ws.sendJSON({ type: "interview:end" });
-  }, [ws, status]);
+  }, [ws, status, flushMetrics]);
 
   const statusLabel = useMemo(() => {
     if (status === "connecting") return "Connecting…";

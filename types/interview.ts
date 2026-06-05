@@ -92,6 +92,28 @@ export interface VisionAnalysis {
 
 export type Gender = "male" | "female";
 
+/**
+ * Real-time metrics computed in-browser by MediaPipe (the "model's perspective").
+ * These are aggregated over the whole interview and sent to the server for the
+ * final feedback — no images leave the device for these.
+ */
+export interface CvMetrics {
+  /** Frames analyzed locally. */
+  frames: number;
+  /** % of frames a face was detected. */
+  presentPct: number;
+  /** % of frames the candidate was looking at the camera. */
+  eyeContactPct: number;
+  /** Blinks per minute. */
+  blinksPerMin: number;
+  /** % of frames showing a smile. */
+  smilePct: number;
+  /** 0-100 head steadiness (100 = very still, low fidgeting). */
+  headSteadiness: number;
+  /** 0-100 composite engagement score. */
+  engagement: number;
+}
+
 /* ─────────────────────────────── Transcript ─────────────────────────────── */
 
 export type SpeakerRole = "interviewer" | "candidate";
@@ -138,6 +160,8 @@ export interface VisionReport {
   eyeContactScore: number;
   bodyLanguageSummary: string;
   presentationNotes: string;
+  /** Raw live-tracking metrics from MediaPipe (shown alongside the narrative). */
+  liveMetrics?: CvMetrics;
 }
 
 export interface InterviewFeedback {
@@ -186,6 +210,12 @@ export interface ClientPlaybackComplete {
   type: "playback:complete";
 }
 
+/** Periodic aggregated CV metrics from the in-browser MediaPipe tracker. */
+export interface ClientCvMetrics {
+  type: "cv:metrics";
+  metrics: CvMetrics;
+}
+
 export interface ClientEndMessage {
   type: "interview:end";
 }
@@ -194,6 +224,7 @@ export type ClientMessage =
   | ClientStartMessage
   | ClientVisionMessage
   | ClientPlaybackComplete
+  | ClientCvMetrics
   | ClientEndMessage;
 
 export interface ServerSpeakingStart {
@@ -257,8 +288,15 @@ export type ServerMessage =
 export const MIC_SAMPLE_RATE = 16000;
 /** ElevenLabs output + browser playback rate. */
 export const TTS_SAMPLE_RATE = 24000;
-/** How often a webcam frame is captured for vision analysis. */
-export const VISION_INTERVAL_MS = 3000;
+/**
+ * How often a webcam frame is sent to Claude vision (the qualitative
+ * "Claude's perspective"). Once a minute — ~10 calls in a 10-min interview.
+ * Continuous measurable metrics come from the in-browser MediaPipe tracker
+ * instead, so this can be sparse.
+ */
+export const VISION_INTERVAL_MS = 60000;
+/** How often aggregated MediaPipe metrics are pushed to the server. */
+export const CV_METRICS_INTERVAL_MS = 20000;
 /** How often the live session is checkpointed to Supabase. */
 export const AUTOSAVE_INTERVAL_MS = 30000;
 

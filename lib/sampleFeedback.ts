@@ -54,6 +54,15 @@ export const SAMPLE_FEEDBACK: InterviewFeedback = {
       "Posture was steady and engaged for most of the session. You leaned in when answering behavioral questions, but eye contact dipped noticeably on the two technical questions — a tell that you were searching for the answer.",
     presentationNotes:
       "Clean, professional framing and lighting. Watch a tendency to look down and to the left when buying time.",
+    liveMetrics: {
+      frames: 2840,
+      presentPct: 98,
+      eyeContactPct: 68,
+      blinksPerMin: 24,
+      smilePct: 22,
+      headSteadiness: 81,
+      engagement: 74,
+    },
   },
   topThreeImprovements: [
     "Quantify everything. Replace ‘mostly fine’ and ‘faster’ with numbers, timelines and outcomes.",

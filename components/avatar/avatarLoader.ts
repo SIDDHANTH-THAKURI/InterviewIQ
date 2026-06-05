@@ -164,15 +164,11 @@ export function buildStylizedAvatar(variant: AvatarVariant = "female"): AvatarPa
     }
   }
 
-  /* ── Nose ── */
-  const noseBridge = keep(new THREE.Mesh(new THREE.SphereGeometry(0.055, 18, 14), skinMat));
-  noseBridge.scale.set(0.55, 1.6, 0.8);
-  noseBridge.position.set(0, 0.03, 0.49);
-  head.add(noseBridge);
-  const noseTip = keep(new THREE.Mesh(new THREE.SphereGeometry(0.062, 18, 14), skinMat));
-  noseTip.scale.set(1, 0.8, 0.9);
-  noseTip.position.set(0, -0.08, 0.5);
-  head.add(noseTip);
+  /* ── Nose (simple rounded sphere, no bridge) ── */
+  const nose = keep(new THREE.Mesh(new THREE.SphereGeometry(0.07, 20, 16), skinMat));
+  nose.scale.set(1, 0.95, 0.9);
+  nose.position.set(0, -0.04, 0.5);
+  head.add(nose);
 
   /* ── Eyes ── */
   const makeEye = (x: number) => {
