@@ -48,6 +48,7 @@ export default function InterviewPage() {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [variant, setVariant] = useState<"male" | "female">("female");
   const [interviewerName, setInterviewerName] = useState("Your interviewer");
+  const [activePanelSpeaker, setActivePanelSpeaker] = useState<{ name: string; gender: "male" | "female" } | null>(null);
   const [interviewerLine, setInterviewerLine] = useState("");
   const [candidateFinal, setCandidateFinal] = useState("");
   const [candidateInterim, setCandidateInterim] = useState("");
@@ -70,6 +71,10 @@ export default function InterviewPage() {
           if (msg.state === "live") setStatus("live");
           if (msg.message) setInterviewerName(msg.message);
           if (msg.gender) setVariant(msg.gender);
+          break;
+        case "panel:speaker":
+          setActivePanelSpeaker({ name: msg.name, gender: msg.gender });
+          setVariant(msg.gender);
           break;
         case "ai:thinking":
           setStatus((s) => (s === "connecting" ? "live" : s));
@@ -318,11 +323,14 @@ export default function InterviewPage() {
             {/* Interviewer identity */}
             <div className="pointer-events-none absolute left-6 top-6">
               <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-cream/40">
-                Interviewer
+                {activePanelSpeaker ? "Now speaking" : "Interviewer"}
               </p>
               <p className="display text-2xl font-semibold text-cream/90">
-                {interviewerName}
+                {activePanelSpeaker ? activePanelSpeaker.name : interviewerName}
               </p>
+              {activePanelSpeaker && (
+                <p className="mt-0.5 text-xs text-cream/35">{interviewerName}</p>
+              )}
             </div>
 
             {/* Status chip */}

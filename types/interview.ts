@@ -33,6 +33,8 @@ export interface InterviewConfig {
   customPrompt?: string;
   /** Short job role name used when mode === "resume-only". */
   jobRole?: string;
+  /** When true, two interviewers conduct the session together. */
+  panelMode?: boolean;
 }
 
 export interface InterviewDocuments {
@@ -263,6 +265,14 @@ export interface ServerStatus {
   message?: string;
   /** Interviewer gender — drives the avatar variant on the client. */
   gender?: Gender;
+  /** Panel mode: second interviewer info (name + gender). */
+  panelSecondary?: { name: string; gender: Gender };
+}
+/** Panel mode: emitted before each speaker segment so the client can switch avatar/name. */
+export interface ServerPanelSpeaker {
+  type: "panel:speaker";
+  name: string;
+  gender: Gender;
 }
 export interface ServerError {
   type: "error";
@@ -280,6 +290,7 @@ export type ServerMessage =
   | ServerQuestion
   | ServerComplete
   | ServerStatus
+  | ServerPanelSpeaker
   | ServerError;
 
 /* ─────────────────────────────── Constants ──────────────────────────────── */

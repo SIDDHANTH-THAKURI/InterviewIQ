@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Users } from "lucide-react";
 import { useInterviewStore } from "@/store/interviewStore";
 import {
   type Difficulty,
@@ -76,6 +77,53 @@ export function ConfigStep() {
       <Group label="Interviewer personality" caption={PERSONALITY_DESC[config.personality]}>
         <Chips options={PERSONALITIES} selected={config.personality} onSelect={(personality) => setConfig({ personality })} />
       </Group>
+
+      <Group label="Format">
+        <PanelToggle enabled={config.panelMode ?? false} onToggle={(v) => setConfig({ panelMode: v })} />
+      </Group>
+    </div>
+  );
+}
+
+function PanelToggle({ enabled, onToggle }: { enabled: boolean; onToggle: (v: boolean) => void }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <button
+        type="button"
+        onClick={() => onToggle(!enabled)}
+        className={cn(
+          "group flex items-start gap-4 rounded-2xl border p-5 text-left transition-all duration-200",
+          enabled
+            ? "border-ink bg-ink text-cream"
+            : "border-line bg-paper text-ink hover:border-ink/40"
+        )}
+      >
+        <div className={cn(
+          "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors",
+          enabled ? "border-cream/30 bg-cream/10" : "border-line bg-cream"
+        )}>
+          <Users className={cn("h-4 w-4", enabled ? "text-cream" : "text-ink")} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={cn("font-semibold", enabled ? "text-cream" : "text-ink")}>
+            Panel interview
+            {enabled && <span className="ml-2 text-xs font-medium opacity-60">ON</span>}
+          </p>
+          <p className={cn("mt-1 text-sm leading-relaxed", enabled ? "text-cream/60" : "text-muted")}>
+            Two interviewers conduct your session together — naturally alternating, building on each other, and keeping you on your toes.
+          </p>
+        </div>
+        <div className={cn(
+          "mt-1 h-4 w-8 shrink-0 rounded-full transition-colors duration-200",
+          enabled ? "bg-accent" : "bg-line"
+        )}>
+          <motion.div
+            className="h-4 w-4 rounded-full bg-white shadow-sm"
+            animate={{ x: enabled ? 16 : 0 }}
+            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          />
+        </div>
+      </button>
     </div>
   );
 }

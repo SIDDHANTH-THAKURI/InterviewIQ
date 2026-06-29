@@ -4,12 +4,18 @@ import {
   FEEDBACK_MODEL,
   FEEDBACK_SYSTEM_PROMPT,
   buildSystemPrompt,
+  buildPanelSystemPrompt,
   buildFeedbackUserPrompt,
   pickInterviewer,
+  pickTwoInterviewers,
   getVoiceId,
+  getSecondaryVoiceId,
   guessJobTitle,
   formatVisionContext,
   extractJson,
+  makePanelOpeningInstruction,
+  makePanelMoveonInstruction,
+  type Interviewer,
   type Gender,
 } from "../lib/claude";
 import { DeepgramSTT, type STTConnection, type STTHandlers } from "./stt";
@@ -88,6 +94,8 @@ export class InterviewOrchestrator {
   private interviewerName = "Your interviewer";
   private gender: Gender = "female";
   private voiceId = "";
+  private secondaryVoiceId = "";
+  private panelInterviewers: [Interviewer, Interviewer] | null = null;
   private sampleRate = MIC_SAMPLE_RATE;
   private systemPrompt = "";
   private history: ChatTurn[] = [];
@@ -98,6 +106,7 @@ export class InterviewOrchestrator {
 
   private stt: STTConnection | null = null;
   private tts: ElevenLabsTTS | null = null;
+  private tts2: ElevenLabsTTS | null = null; // panel secondary voice
   private autosave: NodeJS.Timeout | null = null;
 
   private sessionKeys: SessionKeys = {};
@@ -149,19 +158,37 @@ export class InterviewOrchestrator {
       return;
     }
 
-    const interviewer = pickInterviewer(this.sessionId);
-    this.interviewerName = interviewer.name;
-    this.gender = interviewer.gender;
-    this.voiceId = getVoiceId(this.gender);
-    this.systemPrompt = buildSystemPrompt({
-      interviewerName: this.interviewerName,
-      documents: this.documents,
-      config: this.config,
-      jobTitle: guessJobTitle(this.documents.jobDescription),
-    });
-
     const elKey = this.sessionKeys.elevenlabs || process.env.ELEVENLABS_API_KEY || "";
-    this.tts = new ElevenLabsTTS(elKey, this.voiceId);
+
+    if (this.config.panelMode) {
+      const [i1, i2] = pickTwoInterviewers(this.sessionId);
+      this.panelInterviewers = [i1, i2];
+      this.interviewerName = `${i1.name} & ${i2.name}`;
+      this.gender = i1.gender; // primary avatar gender
+      this.voiceId = getVoiceId(i1.gender);
+      this.secondaryVoiceId = getSecondaryVoiceId(i2.gender);
+      this.systemPrompt = buildPanelSystemPrompt({
+        interviewer1: i1,
+        interviewer2: i2,
+        documents: this.documents,
+        config: this.config,
+        jobTitle: guessJobTitle(this.documents.jobDescription),
+      });
+      this.tts = new ElevenLabsTTS(elKey, this.voiceId);
+      this.tts2 = new ElevenLabsTTS(elKey, this.secondaryVoiceId);
+    } else {
+      const interviewer = pickInterviewer(this.sessionId);
+      this.interviewerName = interviewer.name;
+      this.gender = interviewer.gender;
+      this.voiceId = getVoiceId(this.gender);
+      this.systemPrompt = buildSystemPrompt({
+        interviewerName: this.interviewerName,
+        documents: this.documents,
+        config: this.config,
+        jobTitle: guessJobTitle(this.documents.jobDescription),
+      });
+      this.tts = new ElevenLabsTTS(elKey, this.voiceId);
+    }
 
     const sttHandlers: STTHandlers = {
       onInterim: (text) => {
@@ -199,16 +226,32 @@ export class InterviewOrchestrator {
     }
 
     // Tell the client who is interviewing + which avatar gender to render.
-    this.emit({
-      type: "status",
-      state: "starting",
-      message: this.interviewerName,
-      gender: this.gender,
-    });
+    if (this.panelInterviewers) {
+      const [i1, i2] = this.panelInterviewers;
+      this.emit({
+        type: "status",
+        state: "starting",
+        message: this.interviewerName,
+        gender: i1.gender,
+        panelSecondary: { name: i2.name, gender: i2.gender },
+      });
+    } else {
+      this.emit({
+        type: "status",
+        state: "starting",
+        message: this.interviewerName,
+        gender: this.gender,
+      });
+    }
 
     this.autosave = setInterval(() => this.persist("live"), AUTOSAVE_INTERVAL_MS);
 
-    this.history.push({ role: "user", content: OPENING_INSTRUCTION, synthetic: true });
+    if (this.panelInterviewers) {
+      const [i1, i2] = this.panelInterviewers;
+      this.history.push({ role: "user", content: makePanelOpeningInstruction(i1.name, i2.name), synthetic: true });
+    } else {
+      this.history.push({ role: "user", content: OPENING_INSTRUCTION, synthetic: true });
+    }
     await this.runBrainTurn();
   }
 
@@ -263,6 +306,7 @@ export class InterviewOrchestrator {
     this.autosave = null;
     this.stt?.close();
     this.stt = null;
+    this.tts2 = null;
   }
 
   /* ─────────────────────────────── turns ──────────────────────────────── */
@@ -298,6 +342,9 @@ export class InterviewOrchestrator {
   }
 
   private async runBrainTurn() {
+    if (this.panelInterviewers) {
+      return this.runBrainTurnPanel();
+    }
     if (this.closed || !this.tts) return;
     this.generating = true;
     this.clearSilence();
@@ -371,6 +418,70 @@ export class InterviewOrchestrator {
     }
   }
 
+  private async runBrainTurnPanel() {
+    if (this.closed || !this.tts || !this.panelInterviewers) return;
+    this.generating = true;
+    this.clearSilence();
+    this.emit({ type: "ai:thinking" });
+
+    let full = "";
+    try {
+      const stream = getAnthropic(this.sessionKeys.anthropic).messages.stream({
+        model: BRAIN_MODEL,
+        max_tokens: 600,
+        system: this.systemPrompt,
+        messages: this.buildMessages(),
+      });
+      stream.on("text", (delta: string) => { full += delta; });
+      await stream.finalMessage();
+    } catch (err) {
+      console.warn("[brain/panel]", (err as Error).message);
+      this.generating = false;
+      this.emit({ type: "error", message: "The interviewers had trouble responding. Please try again." });
+      return;
+    }
+
+    const complete = full.includes(COMPLETE_TOKEN);
+    const spoken = stripToken(full).trim();
+    if (spoken) this.history.push({ role: "assistant", content: spoken });
+
+    const [i1, i2] = this.panelInterviewers;
+    const segments = parsePanelSegments(spoken, [i1.name, i2.name]);
+    const fullSpoken: string[] = [];
+
+    for (const seg of segments) {
+      if (this.closed) break;
+      const isPrimary = seg.name === i1.name;
+      const gender: Gender = isPrimary ? i1.gender : i2.gender;
+      const ttsInstance = isPrimary ? this.tts! : (this.tts2 ?? this.tts!);
+
+      this.emit({ type: "panel:speaker", name: seg.name, gender });
+      const tts = ttsInstance.createSession({
+        onStart: () => this.emit({ type: "avatar:speaking:start" }),
+        onAudio: (buf) => this.emitAudio(buf),
+        onError: (m) => console.warn("[tts/panel]", m),
+      });
+      tts.sendText(seg.text + " ");
+      tts.endInput();
+      await tts.done;
+      this.emit({ type: "avatar:speaking:end" });
+      fullSpoken.push(seg.text);
+    }
+
+    if (fullSpoken.length) this.emit({ type: "interview:question", text: fullSpoken.join(" ") });
+    this.generating = false;
+
+    if (this.finalBuffer.trim()) {
+      this.restartSettle();
+      return;
+    }
+    if (complete && this.exchangeCount >= this.minExchanges) {
+      await this.finish();
+    } else {
+      this.pendingArmSilence = true;
+    }
+  }
+
   /** Speak a fixed line (reassurance / reaction) without invoking the brain. */
   private async speakLine(text: string) {
     if (this.closed || !this.tts || this.generating) return;
@@ -420,7 +531,10 @@ export class InterviewOrchestrator {
 
     // Escalate: let the brain reassure + rephrase or move on.
     this.stopAwaiting();
-    this.history.push({ role: "user", content: MOVEON_INSTRUCTION, synthetic: true });
+    const moveon = this.panelInterviewers
+      ? makePanelMoveonInstruction(this.panelInterviewers[0].name, this.panelInterviewers[1].name)
+      : MOVEON_INSTRUCTION;
+    this.history.push({ role: "user", content: moveon, synthetic: true });
     await this.runBrainTurn();
   }
 
@@ -608,6 +722,39 @@ export class InterviewOrchestrator {
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function parsePanelSegments(
+  text: string,
+  speakerNames: string[],
+): Array<{ name: string; text: string }> {
+  const escaped = speakerNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const tagRe = new RegExp(`\\[(${escaped.join("|")})\\]`, "g");
+  const segments: Array<{ name: string; text: string }> = [];
+  let lastName: string | null = null;
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = tagRe.exec(text)) !== null) {
+    if (lastName !== null && m.index > lastIdx) {
+      const seg = text.slice(lastIdx, m.index).trim();
+      if (seg) segments.push({ name: lastName, text: seg });
+    }
+    lastName = m[1];
+    lastIdx = m.index + m[0].length;
+  }
+
+  if (lastName !== null && lastIdx < text.length) {
+    const seg = text.slice(lastIdx).trim();
+    if (seg) segments.push({ name: lastName, text: seg });
+  }
+
+  // Fallback: no tags found — attribute to primary speaker
+  if (segments.length === 0 && text.trim()) {
+    segments.push({ name: speakerNames[0] ?? "Interviewer", text: text.trim() });
+  }
+
+  return segments;
 }
 
 function stripToken(s: string): string {

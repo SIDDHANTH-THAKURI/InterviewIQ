@@ -13,6 +13,7 @@ import { MediaCheck } from "@/components/setup/MediaCheck";
 import { EASE } from "@/components/ui/Reveal";
 import { unlockPlayback } from "@/lib/audioBus";
 import { cn } from "@/lib/utils";
+import { loadDraftConfig, loadDraftDocs, saveDraftConfig, saveDraftDocs } from "@/lib/persistence";
 
 const variants = {
   enter: (dir: number) => ({ x: dir > 0 ? 48 : -48, opacity: 0 }),
@@ -44,6 +45,8 @@ export default function SetupPage() {
   const router = useRouter();
   const documents = useInterviewStore((s) => s.documents);
   const config = useInterviewStore((s) => s.config);
+  const setConfig = useInterviewStore((s) => s.setConfig);
+  const setDocuments = useInterviewStore((s) => s.setDocuments);
   const newSession = useInterviewStore((s) => s.newSession);
 
   const [step, setStep] = useState(0);
@@ -57,11 +60,19 @@ export default function SetupPage() {
 
   // Redirect to /keys if no keys saved yet
   useEffect(() => {
-    // Dynamic import so this only runs client-side (localStorage)
     import("@/lib/keys").then(({ loadKeys, keysAreSet }) => {
       if (!keysAreSet(loadKeys())) router.replace("/keys");
     });
   }, [router]);
+
+  // Pre-fill from last session (only on first mount, before user changes anything)
+  useEffect(() => {
+    const draftConfig = loadDraftConfig();
+    const draftDocs = loadDraftDocs();
+    if (draftConfig) setConfig(draftConfig);
+    if (draftDocs) setDocuments(draftDocs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Recalculate step index when mode changes and steps array shifts
   useEffect(() => {
@@ -88,6 +99,8 @@ export default function SetupPage() {
 
   const handleBegin = async () => {
     setLoading(true);
+    saveDraftConfig(config);
+    saveDraftDocs(documents);
     await unlockPlayback();
     newSession();
     router.push("/interview");

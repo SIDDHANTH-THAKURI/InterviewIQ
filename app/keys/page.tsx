@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Key, CheckCircle2, ExternalLink, ArrowRight, Trash2 } from "lucide-react";
 import { saveKeys, loadKeys, clearKeys, keysAreSet } from "@/lib/keys";
+import { unlockPlayback } from "@/lib/audioBus";
 import { EASE } from "@/components/ui/Reveal";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +29,15 @@ export default function KeysPage() {
   const handleSave = () => {
     saveKeys({ anthropic: anthropic.trim(), elevenlabs: elevenlabs.trim() });
     setSaved(true);
-    setTimeout(() => router.push("/setup"), 900);
+    // This click is a user gesture — unlock the shared audio context now so the
+    // welcome intro can speak without any extra tap. The context survives the
+    // client-side navigation into /welcome.
+    void unlockPlayback();
+    let seen = false;
+    try {
+      seen = !!localStorage.getItem("interviewiq_intro_seen");
+    } catch { /* ignore */ }
+    setTimeout(() => router.push(seen ? "/setup" : "/welcome"), 800);
   };
 
   const handleClear = () => {

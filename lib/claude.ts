@@ -66,6 +66,15 @@ export function pickInterviewer(seed?: string): Interviewer {
   return INTERVIEWERS[h % INTERVIEWERS.length];
 }
 
+/** Panel mode: always picks one female (primary) + one male (secondary). */
+export function pickTwoInterviewers(seed?: string): [Interviewer, Interviewer] {
+  const females = INTERVIEWERS.filter((i) => i.gender === "female");
+  const males = INTERVIEWERS.filter((i) => i.gender === "male");
+  let h = 0;
+  if (seed) for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return [females[h % females.length], males[(h + 1) % males.length]];
+}
+
 /**
  * Resolves the ElevenLabs voice id for a gender. Defaults are verified-valid
  * premade voices; override per gender via env to use any voice in your account.
@@ -73,6 +82,13 @@ export function pickInterviewer(seed?: string): Interviewer {
 export function getVoiceId(gender: Gender): string {
   const male = process.env.ELEVENLABS_VOICE_ID_MALE || "pNInz6obpgDQGcFmaJgB"; // Adam
   const female = process.env.ELEVENLABS_VOICE_ID_FEMALE || "EXAVITQu4vr4xnSDxMaL"; // Sarah
+  return gender === "male" ? male : female;
+}
+
+/** Second voice for panel mode secondary speaker — use a distinct voice so interviewers sound different. */
+export function getSecondaryVoiceId(gender: Gender): string {
+  const male = process.env.ELEVENLABS_VOICE_ID_MALE_2 || "ErXwobaYiN019PkySvjV"; // Antoni
+  const female = process.env.ELEVENLABS_VOICE_ID_FEMALE_2 || "21m00Tcm4TlvDq8ikWAM"; // Rachel
   return gender === "male" ? male : female;
 }
 
@@ -205,6 +221,76 @@ ${SHARED_RULES}
 - Reference specific things from their resume and cover letter naturally, by name.
 
 Begin now.`;
+}
+
+/* ─────────────────────── Panel interview opening instructions ───────────── */
+
+export const makePanelOpeningInstruction = (n1: string, n2: string) =>
+  `[The panel interview is beginning. ${n1} should greet the candidate, introduce both interviewers by name, and start a brief icebreaker. ${n2} can add a short greeting too. Keep it warm and natural — no interview questions yet.]`;
+
+export const makePanelMoveonInstruction = (n1: string, n2: string) =>
+  `[The candidate has gone quiet or seems stuck. One or both of you should warmly reassure them, rephrase the question, or gently move on. Keep it brief and supportive.]`;
+
+export interface PanelPromptParams {
+  interviewer1: Interviewer;
+  interviewer2: Interviewer;
+  documents: InterviewDocuments;
+  config: InterviewConfig;
+  jobTitle?: string;
+}
+
+export function buildPanelSystemPrompt({
+  interviewer1,
+  interviewer2,
+  documents,
+  config,
+  jobTitle,
+}: PanelPromptParams): string {
+  const mode = config.mode ?? "standard";
+  const approxQuestions = Math.max(4, Math.round(config.duration / 2.5));
+
+  const CONFIG_BLOCK = `Interview config:
+- Type: ${INTERVIEW_TYPE_LABELS[config.type]}
+- Difficulty: ${DIFFICULTY_LABELS[config.difficulty]} — ${DIFFICULTY_GUIDANCE[config.difficulty]}
+- Personality: ${PERSONALITY_LABELS[config.personality]} — ${PERSONALITY_GUIDANCE[config.personality]}
+- Target duration: ${config.duration} minutes (roughly ${approxQuestions} substantive exchanges plus intro)`;
+
+  const RULES = `Rules:
+- ALWAYS prefix EVERY line you output with the speaker's exact name in square brackets, like this:
+  [${interviewer1.name}] Your text here...
+  [${interviewer2.name}] Their text here...
+- Not every exchange needs both speakers. Often just one person speaks per turn.
+- ${interviewer1.name} is PRIMARY — drives structure, asks most questions.
+- ${interviewer2.name} is SECONDARY — interjects, probes deeper, offers a different angle.
+- They should reference each other naturally: "Good point, ${interviewer2.name}" or "What I'd add to that is..."
+- Speak naturally, like real humans. No bullet points, no markdown — pure conversational speech for a voice engine.
+- ONE question or comment per exchange total. Keep turns short — 2 to 5 lines maximum.
+- React authentically: probe weak answers, affirm strong ones, pick up on details.
+- You are NOT an AI. You are ${interviewer1.name} and ${interviewer2.name}, human interviewers. Never break character.
+- When ending, both say goodbye naturally, then output [INTERVIEW_COMPLETE] alone on its own line.`;
+
+  const title = jobTitle || (mode === "standard" ? guessJobTitle(documents.jobDescription) : "this role");
+
+  let docsBlock = "";
+  if (mode === "standard") {
+    docsBlock = `\nCandidate profile:\nRESUME:\n${documents.resumeText || "(not provided)"}\n\nCOVER LETTER:\n${documents.coverLetterText || "(not provided)"}\n\nJOB DESCRIPTION:\n${documents.jobDescription || "(not provided)"}`;
+  } else if (mode === "resume-only") {
+    docsBlock = `\nCandidate resume:\n${documents.resumeText || "(not provided)"}`;
+  } else if (mode === "custom") {
+    docsBlock = `\nScenario:\n${config.customPrompt || "(none)"}`;
+  }
+
+  return `You are playing TWO human interviewers conducting a panel interview for "${title}":
+
+1. ${interviewer1.name} (${interviewer1.gender}) — PRIMARY interviewer
+2. ${interviewer2.name} (${interviewer2.gender}) — SECONDARY interviewer
+${docsBlock}
+
+${CONFIG_BLOCK}
+
+${RULES}
+
+Begin the interview now.`;
 }
 
 /** Context block injected before each brain turn (latest vision read). */

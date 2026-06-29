@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Download, RotateCcw, ArrowUpRight, Info } from "lucide-react";
+import { Download, RotateCcw, ArrowUpRight, Info, Loader2 } from "lucide-react";
 import { useInterviewStore } from "@/store/interviewStore";
 import { loadFeedback } from "@/lib/supabase";
+import { saveToHistory } from "@/lib/persistence";
 import { SAMPLE_FEEDBACK } from "@/lib/sampleFeedback";
 import { downloadFeedbackPdf } from "@/lib/pdfReport";
 import { Reveal, EASE } from "@/components/ui/Reveal";
@@ -39,6 +40,7 @@ export default function FeedbackPage() {
     if (storeFeedback) {
       setFeedback(storeFeedback);
       setLoading(false);
+      if (sessionId) saveToHistory(sessionId, config, storeFeedback);
       return;
     }
     let active = true;
@@ -58,9 +60,25 @@ export default function FeedbackPage() {
     };
   }, [storeFeedback, sessionId]);
 
+  const [leaving, setLeaving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
   const startOver = () => {
+    if (leaving) return;
+    setLeaving(true);
     reset();
-    router.push("/setup");
+    router.push("/keys");
+  };
+
+  const handleDownload = async () => {
+    if (downloading || !feedback) return;
+    setDownloading(true);
+    try {
+      await Promise.resolve(downloadFeedbackPdf(feedback, config));
+    } finally {
+      // Let the spinner read as deliberate even on a fast machine.
+      setTimeout(() => setDownloading(false), 600);
+    }
   };
 
   if (loading || !feedback) {
@@ -85,13 +103,22 @@ export default function FeedbackPage() {
           </Link>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => downloadFeedbackPdf(feedback, config)}
-              className="btn-ghost text-sm"
+              onClick={handleDownload}
+              disabled={downloading}
+              className="btn-ghost text-sm disabled:opacity-70"
             >
-              <Download className="h-4 w-4" /> Download PDF
+              {downloading ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Preparing…</>
+              ) : (
+                <><Download className="h-4 w-4" /> Download PDF</>
+              )}
             </button>
-            <button onClick={startOver} className="btn-primary text-sm">
-              <RotateCcw className="h-4 w-4" /> New interview
+            <button onClick={startOver} disabled={leaving} className="btn-primary text-sm disabled:opacity-80">
+              {leaving ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Loading…</>
+              ) : (
+                <><RotateCcw className="h-4 w-4" /> New interview</>
+              )}
             </button>
           </div>
         </div>
