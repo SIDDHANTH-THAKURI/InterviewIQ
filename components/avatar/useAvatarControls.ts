@@ -156,8 +156,9 @@ export function createAvatarAnimator(parts: AvatarParts): AvatarAnimator {
         state === "thinking" ? 0.18 :
         state === "listening" ? -0.06 : 0;
       const angleDelta = Math.max(-0.12, Math.min(0.28, stateDelta + browFurrow * 0.18));
-      (leftBrow as THREE.Object3D).rotation.z = damp((leftBrow as THREE.Object3D).rotation.z, baseBrowZLeft + angleDelta, 5, dt);
-      (rightBrow as THREE.Object3D).rotation.z = damp((rightBrow as THREE.Object3D).rotation.z, baseBrowZRight - angleDelta, 5, dt);
+      // left brow: subtract delta to go more stern (inner corner down); right brow: add delta
+      (leftBrow as THREE.Object3D).rotation.z = damp((leftBrow as THREE.Object3D).rotation.z, baseBrowZLeft - angleDelta, 5, dt);
+      (rightBrow as THREE.Object3D).rotation.z = damp((rightBrow as THREE.Object3D).rotation.z, baseBrowZRight + angleDelta, 5, dt);
 
       const openTarget =
         state === "speaking"

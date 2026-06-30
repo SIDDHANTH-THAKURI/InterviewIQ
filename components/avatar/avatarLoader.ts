@@ -198,13 +198,14 @@ export function buildStylizedAvatar(variant: AvatarVariant = "female", personali
 
   /* ── Brows ── */
   const browAngle =
-    personality === "tough" ? 0.32 :
+    personality === "tough" ? 0.28 :
     personality === "silent" ? 0.40 :
-    personality === "friendly" ? 0.08 : 0.18;
+    personality === "friendly" ? 0.0 : 0.12;
   const makeBrow = (x: number) => {
     const brow = keep(new THREE.Mesh(new THREE.CapsuleGeometry(male ? 0.017 : 0.0095, male ? 0.12 : 0.1, 6, 12), hairMat));
     const angle = male ? browAngle * 0.65 : browAngle;
-    brow.rotation.z = x < 0 ? Math.PI / 2 + angle : Math.PI / 2 - angle;
+    // stern look: inner corners DOWN → left brow tilts clockwise (PI/2 - angle), right counter-clockwise (PI/2 + angle)
+    brow.rotation.z = x < 0 ? Math.PI / 2 - angle : Math.PI / 2 + angle;
     brow.scale.set(1, 1, 0.5);
     brow.position.set(x, male ? 0.21 : 0.225, 0.45);
     head.add(brow);
