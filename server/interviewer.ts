@@ -111,6 +111,7 @@ export class InterviewOrchestrator {
 
   private sessionKeys: SessionKeys = {};
   private generating = false;
+  private panelPlaybackResolver: (() => void) | null = null;
   private analyzing = false;
   private finished = false;
   private closed = false;
@@ -166,7 +167,7 @@ export class InterviewOrchestrator {
       this.interviewerName = `${i1.name} & ${i2.name}`;
       this.gender = i1.gender; // primary avatar gender
       this.voiceId = getVoiceId(i1.gender);
-      this.secondaryVoiceId = getSecondaryVoiceId(i2.gender);
+      this.secondaryVoiceId = getVoiceId(i2.gender); // use same voice table — gender differs so voices differ
       this.systemPrompt = buildPanelSystemPrompt({
         interviewer1: i1,
         interviewer2: i2,
@@ -218,9 +219,7 @@ export class InterviewOrchestrator {
         type: "error",
         fatal: true,
         message:
-          "No speech-to-text available. Enable the 'speech_to_text' permission on your ElevenLabs API key, or set DEEPGRAM_API_KEY. (" +
-          (err as Error).message +
-          ")",
+          "No Deepgram API key. Add it at /keys or set DEEPGRAM_API_KEY in .env.local. (" + (err as Error).message + ")",
       });
       return;
     }
@@ -286,11 +285,33 @@ export class InterviewOrchestrator {
 
   /** Client browser finished playing the audio — now arm silence detection. */
   handlePlaybackComplete() {
+    // Panel inter-segment sync: resolver takes priority.
+    if (this.panelPlaybackResolver) {
+      const resolve = this.panelPlaybackResolver;
+      this.panelPlaybackResolver = null;
+      resolve();
+      return;
+    }
     if (this.closed || this.generating) return;
     if (this.pendingArmSilence) {
       this.pendingArmSilence = false;
       this.armSilence();
     }
+  }
+
+  /** Waits for the client to confirm it finished playing the current audio chunk.
+   *  Used between panel segments so speaker B's audio never overlaps speaker A's. */
+  private waitForPanelPlayback(timeoutMs = 20000): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.panelPlaybackResolver = null;
+        resolve();
+      }, timeoutMs);
+      this.panelPlaybackResolver = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
   }
 
   end() {
@@ -449,10 +470,12 @@ export class InterviewOrchestrator {
     const segments = parsePanelSegments(spoken, [i1.name, i2.name]);
     const fullSpoken: string[] = [];
 
-    for (const seg of segments) {
+    for (let si = 0; si < segments.length; si++) {
+      const seg = segments[si];
       if (this.closed) break;
       const isPrimary = seg.name === i1.name;
       const gender: Gender = isPrimary ? i1.gender : i2.gender;
+      // Each speaker has their own TTS instance so voices never bleed across.
       const ttsInstance = isPrimary ? this.tts! : (this.tts2 ?? this.tts!);
 
       this.emit({ type: "panel:speaker", name: seg.name, gender });
@@ -464,8 +487,16 @@ export class InterviewOrchestrator {
       tts.sendText(seg.text + " ");
       tts.endInput();
       await tts.done;
+
       this.emit({ type: "avatar:speaking:end" });
       fullSpoken.push(seg.text);
+
+      // Between segments: wait for client to confirm audio finished before
+      // switching speaker. Skipped after the last segment — the existing
+      // pendingArmSilence/playback:complete path handles that one.
+      if (si < segments.length - 1 && !this.closed) {
+        await this.waitForPanelPlayback();
+      }
     }
 
     if (fullSpoken.length) this.emit({ type: "interview:question", text: fullSpoken.join(" ") });
@@ -684,36 +715,20 @@ export class InterviewOrchestrator {
     });
   }
 
-  /** Prefer ElevenLabs Scribe v2 Realtime; fall back to Deepgram if the key
-   *  lacks the speech_to_text permission or EL realtime is otherwise blocked. */
   private async createSTT(handlers: STTHandlers): Promise<STTConnection> {
-    const elKey = this.sessionKeys.elevenlabs || process.env.ELEVENLABS_API_KEY;
     const dgKey = this.sessionKeys.deepgram || process.env.DEEPGRAM_API_KEY;
-    const preferDeepgram = process.env.STT_PROVIDER === "deepgram";
-    if (elKey && !preferDeepgram) {
-      try {
-        const token = await mintScribeToken(elKey);
-        console.log("[stt] using ElevenLabs Scribe v2 Realtime");
-        return new ElevenLabsSTT(() => mintScribeToken(elKey), handlers, this.sampleRate, token);
-      } catch (err) {
-        console.warn(
-          "[stt] ElevenLabs realtime unavailable (" +
-            ((err as Error).message || "").slice(0, 140) +
-            ") — falling back to Deepgram"
-        );
-      }
-    }
     if (dgKey) {
       console.log("[stt] using Deepgram nova-3");
       return new DeepgramSTT(dgKey, handlers, this.sampleRate);
     }
-    throw new Error("no STT provider configured");
+    throw new Error("No Deepgram API key. Add it at /keys or set DEEPGRAM_API_KEY in .env.local.");
   }
 
   private missingKeys(): string[] {
     const need: string[] = [];
     if (!(this.sessionKeys.anthropic || process.env.ANTHROPIC_API_KEY)) need.push("ANTHROPIC_API_KEY");
     if (!(this.sessionKeys.elevenlabs || process.env.ELEVENLABS_API_KEY)) need.push("ELEVENLABS_API_KEY");
+    if (!(this.sessionKeys.deepgram || process.env.DEEPGRAM_API_KEY)) need.push("DEEPGRAM_API_KEY");
     return need;
   }
 }

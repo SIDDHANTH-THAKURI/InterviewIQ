@@ -31,5 +31,5 @@ export function clearKeys(): void {
 }
 
 export function keysAreSet(keys: SessionKeys): boolean {
-  return !!(keys.anthropic?.trim() && keys.elevenlabs?.trim());
+  return !!(keys.anthropic?.trim() && keys.elevenlabs?.trim() && keys.deepgram?.trim());
 }

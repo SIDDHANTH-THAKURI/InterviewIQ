@@ -41,13 +41,13 @@ cp .env.example .env.local
 
 You need four keys for the live experience:
 
-| Variable | Where to get it |
-| --- | --- |
-| `ANTHROPIC_API_KEY` | https://console.anthropic.com → API Keys |
-| `ELEVENLABS_API_KEY` | https://elevenlabs.io → Profile → API Key |
-| `ELEVENLABS_VOICE_ID_MALE` | ElevenLabs → Voices (default in `.env.example` is "Adam") |
-| `ELEVENLABS_VOICE_ID_FEMALE` | ElevenLabs → Voices (default in `.env.example` is "Rachel") |
-| `DEEPGRAM_API_KEY` | https://console.deepgram.com → API Keys |
+| Variable | Purpose | Where to get it |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Interviewer brain + feedback | https://console.anthropic.com → API Keys |
+| `ELEVENLABS_API_KEY` | Interviewer voice (TTS) | https://elevenlabs.io → Profile → API Key |
+| `DEEPGRAM_API_KEY` | Candidate speech recognition (STT) | https://console.deepgram.com → API Keys |
+| `ELEVENLABS_VOICE_ID_MALE` | Male interviewer voice | ElevenLabs → Voices (default: "Adam") |
+| `ELEVENLABS_VOICE_ID_FEMALE` | Female interviewer voice | ElevenLabs → Voices (default: "Rachel") |
 
 Supabase keys are **optional** (see below). All keys are read **server-side only** — the browser only ever sees `NEXT_PUBLIC_WS_URL`.
 
@@ -200,7 +200,7 @@ The server checkpoints the transcript every 30 s and saves feedback at the end. 
 | --- | --- |
 | "Couldn't reach the realtime server" | WS server isn't running, or `NEXT_PUBLIC_WS_URL`/`WS_PORT` mismatch. Run `npm run dev:ws`. |
 | `EADDRINUSE :3002` | Port taken — change `WS_PORT` and `NEXT_PUBLIC_WS_URL` in `.env.local`. |
-| "Missing API keys" error overlay | Fill `.env.local` (or enter keys at `/keys`) and restart the WS server. |
+| "Missing API keys" error overlay | Fill all three keys at `/keys` (Anthropic, ElevenLabs, Deepgram) or in `.env.local`, then restart the WS server. |
 | No avatar voice on `/welcome` | Audio was blocked before the user gesture. Go back to `/keys` and hit Save again — that click unlocks the audio context. |
 | No avatar voice in interview | Browser blocked autoplay — click once anywhere in the room to unlock. |
 | Camera/mic blocked | Allow permissions in the browser, then hit Retry on the mic check. |

@@ -127,27 +127,29 @@ export function buildStylizedAvatar(variant: AvatarVariant = "female"): AvatarPa
   head.add(chin);
 
   /* ── Hair ── */
+  // Hair cap sits high on the crown and pushed back in Z so the sphere
+  // doesn't wrap over the face — eyes and brows stay visible.
   const hairCap = keep(new THREE.Mesh(new THREE.SphereGeometry(0.52, 48, 36), hairMat));
   if (male) {
-    hairCap.scale.set(1.0, 0.62, 1.0);
-    hairCap.position.set(0, 0.2, -0.02);
+    hairCap.scale.set(1.0, 0.50, 0.92);
+    hairCap.position.set(0, 0.27, -0.06);
   } else {
-    hairCap.scale.set(1.06, 0.78, 1.04);
-    hairCap.position.set(0, 0.14, -0.03);
+    hairCap.scale.set(1.08, 0.68, 0.90);
+    hairCap.position.set(0, 0.29, -0.12);
   }
   head.add(hairCap);
 
   if (!male) {
-    // Face-framing side hair + back volume
+    // Side strands pushed back so they frame the face without blocking it
     for (const x of [-1, 1]) {
       const side = keep(new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.55, 8, 16), hairMat));
-      side.scale.set(0.62, 1, 0.62);
-      side.position.set(x * 0.43, -0.16, -0.04);
+      side.scale.set(0.62, 1, 0.58);
+      side.position.set(x * 0.44, -0.14, -0.09);
       head.add(side);
     }
     const back = keep(new THREE.Mesh(new THREE.SphereGeometry(0.46, 32, 24), hairMat));
-    back.scale.set(0.96, 1.15, 0.7);
-    back.position.set(0, -0.1, -0.2);
+    back.scale.set(0.96, 1.15, 0.72);
+    back.position.set(0, -0.08, -0.22);
     head.add(back);
   }
 

@@ -8,7 +8,7 @@ import {
 } from "./interviewer";
 import type { ClientMessage } from "../types/interview";
 
-const PORT = Number(process.env.WS_PORT || 3001);
+const PORT = Number(process.env.PORT || process.env.WS_PORT || 3002);
 
 /* Plain HTTP for health checks (Railway/Render) + a friendly root page. */
 const server = http.createServer((req, res) => {

@@ -26,7 +26,7 @@ const AvatarCanvas = dynamic(
 type RoomStatus = "connecting" | "live" | "wrapping" | "error";
 type Blocked = null | "mobile" | "unsupported";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001";
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3002";
 // Set NEXT_PUBLIC_USE_GLB=true to try /public/avatar-{male,female}.glb. The GLB
 // is only used if it actually contains facial blendshapes (visemes); otherwise
 // the polished built-in avatar is used.
@@ -49,6 +49,9 @@ export default function InterviewPage() {
   const [variant, setVariant] = useState<"male" | "female">("female");
   const [interviewerName, setInterviewerName] = useState("Your interviewer");
   const [activePanelSpeaker, setActivePanelSpeaker] = useState<{ name: string; gender: "male" | "female" } | null>(null);
+  const [panelSecondary, setPanelSecondary] = useState<{ name: string; gender: "male" | "female" } | null>(null);
+  // primaryGender is fixed on mount from the status message — never changes mid-session
+  const [primaryGender, setPrimaryGender] = useState<"male" | "female">("female");
   const [interviewerLine, setInterviewerLine] = useState("");
   const [candidateFinal, setCandidateFinal] = useState("");
   const [candidateInterim, setCandidateInterim] = useState("");
@@ -70,11 +73,12 @@ export default function InterviewPage() {
         case "status":
           if (msg.state === "live") setStatus("live");
           if (msg.message) setInterviewerName(msg.message);
-          if (msg.gender) setVariant(msg.gender);
+          if (msg.gender) { setVariant(msg.gender); setPrimaryGender(msg.gender); }
+          if (msg.panelSecondary) setPanelSecondary(msg.panelSecondary as { name: string; gender: "male" | "female" });
           break;
         case "panel:speaker":
           setActivePanelSpeaker({ name: msg.name, gender: msg.gender });
-          setVariant(msg.gender);
+          // Do NOT touch variant here — panel avatars use fixed primaryGender / panelSecondary.gender
           break;
         case "ai:thinking":
           setStatus((s) => (s === "connecting" ? "live" : s));
@@ -298,18 +302,130 @@ export default function InterviewPage() {
 
   if (blocked) return <BlockedScreen reason={blocked} />;
 
+  const primaryName = panelSecondary
+    ? (interviewerName.split(" & ")[0] || interviewerName)
+    : interviewerName;
+
+  const avatarBg = "radial-gradient(circle at 50% 36%, #2c2c33 0%, #1c1c1e 55%, #141416 100%)";
+
+  const overlays = (
+    <>
+      <AnimatePresence>
+        {status === "connecting" && (
+          <motion.div
+            initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }}
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-charcoal-deep/60 backdrop-blur-sm"
+          >
+            <Loader2 className="h-7 w-7 animate-spin text-accent" />
+            <p className="text-sm text-cream/70">
+              {panelSecondary ? "Your interviewers are getting ready…" : "Your interviewer is getting ready…"}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {status === "error" && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-charcoal-deep/85 px-6 text-center backdrop-blur"
+          >
+            <AlertTriangle className="h-8 w-8 text-accent" />
+            <p className="max-w-sm text-sm text-cream/80">{errorMsg}</p>
+            <div className="flex gap-3">
+              <button onClick={() => location.reload()} className="rounded-full bg-cream px-5 py-2.5 text-sm font-medium text-ink">Retry</button>
+              <Link href="/" className="rounded-full border border-cream/25 px-5 py-2.5 text-sm text-cream/80 hover:bg-cream/10">Exit</Link>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+
+  const footer = (
+    <footer className="group flex items-center justify-between border-t border-white/10 px-6 py-3">
+      <SessionTimer durationMinutes={config.duration} running={timerRunning} onElapsed={onTimerElapsed} />
+      <div className="flex items-center gap-2 text-xs text-cream/40">
+        <Wifi className="h-3.5 w-3.5" />
+        {status === "live" ? "Live" : status === "wrapping" ? "Finishing" : status}
+      </div>
+      <button
+        onClick={endEarly}
+        disabled={status === "wrapping" || status === "error"}
+        className="flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs text-cream/50 transition-all duration-200 hover:border-red-400/50 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <PhoneOff className="h-3.5 w-3.5" /> End interview early
+      </button>
+    </footer>
+  );
+
+  /* ── PANEL MODE layout ───────────────────────────────────────────────── */
+  if (panelSecondary) {
+    return (
+      <main className="relative h-[100dvh] w-full overflow-hidden bg-charcoal-deep text-cream">
+        <div className="flex h-full flex-col">
+          {/* Top ~62%: two avatars side by side */}
+          <section className="relative min-h-0 flex-[3]" style={{ background: avatarBg }}>
+            <div className="flex h-full">
+              <PanelSlot
+                name={primaryName}
+                gender={primaryGender}
+                avatarState={getPanelAvatarState(primaryName, activePanelSpeaker, avatarState, thinking)}
+                isSpeaking={activePanelSpeaker?.name === primaryName}
+                getAmplitude={activePanelSpeaker?.name === primaryName ? player.getAmplitude : ZERO}
+                getMouthShape={activePanelSpeaker?.name === primaryName ? player.getMouthShape : ZERO}
+                glbUrl={GLB_URL ? `/avatar-${primaryGender}.glb` : undefined}
+                isGLB={GLB_URL}
+              />
+              <div className="w-px shrink-0 bg-white/10" />
+              <PanelSlot
+                name={panelSecondary.name}
+                gender={panelSecondary.gender}
+                avatarState={getPanelAvatarState(panelSecondary.name, activePanelSpeaker, avatarState, thinking)}
+                isSpeaking={activePanelSpeaker?.name === panelSecondary.name}
+                getAmplitude={activePanelSpeaker?.name === panelSecondary.name ? player.getAmplitude : ZERO}
+                getMouthShape={activePanelSpeaker?.name === panelSecondary.name ? player.getMouthShape : ZERO}
+                glbUrl={GLB_URL ? `/avatar-${panelSecondary.gender}.glb` : undefined}
+                isGLB={GLB_URL}
+              />
+            </div>
+            {/* Status chip centered at bottom of avatar area */}
+            <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
+              <StatusChip label={statusLabel} state={avatarState} status={status} />
+            </div>
+            {overlays}
+          </section>
+
+          {/* Bottom ~38%: transcript full-width + webcam PiP */}
+          <div className="relative min-h-0 flex-[2] overflow-hidden border-t border-white/10 bg-[#111113]">
+            {/* Transcript scrollable, padded right so PiP doesn't cover text */}
+            <div className="h-full overflow-y-auto px-6 py-4" style={{ paddingRight: "13rem" }}>
+              <LiveTranscript
+                className="min-h-0"
+                interviewerName={activePanelSpeaker?.name || primaryName}
+                interviewerLine={interviewerLine}
+                candidateFinal={candidateFinal}
+                candidateInterim={candidateInterim}
+                thinking={thinking}
+              />
+            </div>
+            {/* PiP webcam — floating bottom-right like a real video call */}
+            <div className="absolute bottom-4 right-4 z-10 w-44 overflow-hidden rounded-xl border border-white/15 shadow-2xl ring-1 ring-black/40">
+              <WebcamFeed videoRef={webcam.videoRef} active={webcam.isActive} />
+            </div>
+          </div>
+
+          {footer}
+        </div>
+      </main>
+    );
+  }
+
+  /* ── STANDARD MODE layout ────────────────────────────────────────────── */
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-charcoal-deep text-cream">
       <div className="flex h-full flex-col">
         <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[3fr_2fr]">
-          {/* Avatar stage */}
-          <section
-            className="relative min-h-0"
-            style={{
-              background:
-                "radial-gradient(circle at 50% 36%, #2c2c33 0%, #1c1c1e 55%, #141416 100%)",
-            }}
-          >
+          <section className="relative min-h-0" style={{ background: avatarBg }}>
             <AvatarCanvas
               state={avatarState}
               variant={variant}
@@ -319,72 +435,16 @@ export default function InterviewPage() {
               getMouthShape={player.getMouthShape}
               className="absolute inset-0 h-full w-full"
             />
-
-            {/* Interviewer identity */}
             <div className="pointer-events-none absolute left-6 top-6">
-              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-cream/40">
-                {activePanelSpeaker ? "Now speaking" : "Interviewer"}
-              </p>
-              <p className="display text-2xl font-semibold text-cream/90">
-                {activePanelSpeaker ? activePanelSpeaker.name : interviewerName}
-              </p>
-              {activePanelSpeaker && (
-                <p className="mt-0.5 text-xs text-cream/35">{interviewerName}</p>
-              )}
+              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-cream/40">Interviewer</p>
+              <p className="display text-2xl font-semibold text-cream/90">{interviewerName}</p>
             </div>
-
-            {/* Status chip */}
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
               <StatusChip label={statusLabel} state={avatarState} status={status} />
             </div>
-
-            {/* Connecting overlay */}
-            <AnimatePresence>
-              {status === "connecting" && (
-                <motion.div
-                  initial={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.6 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-charcoal-deep/60 backdrop-blur-sm"
-                >
-                  <Loader2 className="h-7 w-7 animate-spin text-accent" />
-                  <p className="text-sm text-cream/70">
-                    Your interviewer is getting ready…
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Error overlay */}
-            <AnimatePresence>
-              {status === "error" && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-charcoal-deep/85 px-6 text-center backdrop-blur"
-                >
-                  <AlertTriangle className="h-8 w-8 text-accent" />
-                  <p className="max-w-sm text-sm text-cream/80">{errorMsg}</p>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => location.reload()}
-                      className="rounded-full bg-cream px-5 py-2.5 text-sm font-medium text-ink"
-                    >
-                      Retry
-                    </button>
-                    <Link
-                      href="/"
-                      className="rounded-full border border-cream/25 px-5 py-2.5 text-sm text-cream/80 hover:bg-cream/10"
-                    >
-                      Exit
-                    </Link>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {overlays}
           </section>
 
-          {/* Right rail: webcam + transcript */}
           <aside className="flex min-h-0 flex-col gap-5 border-t border-white/10 p-5 md:border-l md:border-t-0 md:p-6">
             <WebcamFeed videoRef={webcam.videoRef} active={webcam.isActive} />
             <LiveTranscript
@@ -397,29 +457,108 @@ export default function InterviewPage() {
             />
           </aside>
         </div>
-
-        {/* Bottom bar */}
-        <footer className="group flex items-center justify-between border-t border-white/10 px-6 py-3">
-          <SessionTimer
-            durationMinutes={config.duration}
-            running={timerRunning}
-            onElapsed={onTimerElapsed}
-          />
-          <div className="flex items-center gap-2 text-xs text-cream/40">
-            <Wifi className="h-3.5 w-3.5" />
-            {status === "live" ? "Live" : status === "wrapping" ? "Finishing" : status}
-          </div>
-          <button
-            onClick={endEarly}
-            disabled={status === "wrapping" || status === "error"}
-            className="flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-xs text-cream/50 transition-all duration-200 hover:border-red-400/50 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            <PhoneOff className="h-3.5 w-3.5" />
-            End interview early
-          </button>
-        </footer>
+        {footer}
       </div>
     </main>
+  );
+}
+
+/* ─────────────────────────── Panel helpers ─────────────────────────────── */
+
+const ZERO = () => 0;
+
+function getPanelAvatarState(
+  name: string,
+  activeSpeaker: { name: string } | null,
+  globalState: AvatarState,
+  thinking: boolean,
+): AvatarState {
+  if (activeSpeaker?.name === name) return globalState;
+  if (thinking) return "thinking";
+  if (globalState === "listening") return "listening";
+  return "idle";
+}
+
+function PanelSlot({
+  name,
+  gender,
+  avatarState,
+  isSpeaking,
+  getAmplitude,
+  getMouthShape,
+  glbUrl,
+  isGLB,
+}: {
+  name: string;
+  gender: "male" | "female";
+  avatarState: AvatarState;
+  isSpeaking: boolean;
+  getAmplitude: () => number;
+  getMouthShape: () => number;
+  glbUrl?: string;
+  isGLB: boolean;
+}) {
+  return (
+    <div className="relative flex-1 overflow-hidden">
+      {/* Subtle glow behind the speaking avatar */}
+      <AnimatePresence>
+        {isSpeaking && (
+          <motion.div
+            key="glow"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
+            style={{
+              background:
+                "radial-gradient(ellipse at 50% 100%, rgba(201,180,138,0.13) 0%, transparent 70%)",
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AvatarCanvas
+        state={avatarState}
+        variant={gender}
+        glbUrl={glbUrl}
+        isGLB={isGLB}
+        getAmplitude={getAmplitude}
+        getMouthShape={getMouthShape}
+        className="absolute inset-0 h-full w-full"
+      />
+
+      {/* Name tag */}
+      <div className="pointer-events-none absolute left-4 top-5 z-10">
+        <p
+          className="text-[10px] font-medium uppercase tracking-[0.22em] transition-colors duration-300"
+          style={{ color: isSpeaking ? "rgba(201,180,138,0.75)" : "rgba(255,255,255,0.28)" }}
+        >
+          {isSpeaking ? "Speaking" : "Listening"}
+        </p>
+        <p
+          className="display mt-0.5 text-xl font-semibold transition-colors duration-300"
+          style={{ color: isSpeaking ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)" }}
+        >
+          {name}
+        </p>
+      </div>
+
+      {/* Speaking indicator bar at bottom */}
+      <AnimatePresence>
+        {isSpeaking && (
+          <motion.div
+            key="bar"
+            initial={{ scaleX: 0, opacity: 0 }}
+            animate={{ scaleX: 1, opacity: 1 }}
+            exit={{ scaleX: 0, opacity: 0 }}
+            transition={{ duration: 0.35 }}
+            className="absolute inset-x-0 bottom-0 h-[2px] origin-left"
+            style={{ background: "var(--accent, #c9b48a)" }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

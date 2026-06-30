@@ -14,20 +14,23 @@ export default function KeysPage() {
   const router = useRouter();
   const [anthropic, setAnthropic] = useState("");
   const [elevenlabs, setElevenlabs] = useState("");
+  const [deepgram, setDeepgram] = useState("");
   const [showAnthropic, setShowAnthropic] = useState(false);
   const [showElevenlabs, setShowElevenlabs] = useState(false);
+  const [showDeepgram, setShowDeepgram] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const k = loadKeys();
     if (k.anthropic) setAnthropic(k.anthropic);
     if (k.elevenlabs) setElevenlabs(k.elevenlabs);
+    if (k.deepgram) setDeepgram(k.deepgram);
   }, []);
 
-  const canSave = anthropic.trim().length > 10 && elevenlabs.trim().length > 10;
+  const canSave = anthropic.trim().length > 10 && elevenlabs.trim().length > 10 && deepgram.trim().length > 10;
 
   const handleSave = () => {
-    saveKeys({ anthropic: anthropic.trim(), elevenlabs: elevenlabs.trim() });
+    saveKeys({ anthropic: anthropic.trim(), elevenlabs: elevenlabs.trim(), deepgram: deepgram.trim() });
     setSaved(true);
     // This click is a user gesture — unlock the shared audio context now so the
     // welcome intro can speak without any extra tap. The context survives the
@@ -42,7 +45,7 @@ export default function KeysPage() {
 
   const handleClear = () => {
     clearKeys();
-    setAnthropic(""); setElevenlabs("");
+    setAnthropic(""); setElevenlabs(""); setDeepgram("");
     setSaved(false);
   };
 
@@ -87,13 +90,25 @@ export default function KeysPage() {
           />
           <KeyField
             label="ElevenLabs API Key"
-            hint="Voices the interviewer AND transcribes your speech. Enable both 'Text to Speech' and 'Speech to Text' permissions on the key."
+            hint="Voices the interviewer (text-to-speech)"
             placeholder="sk_..."
             value={elevenlabs}
             onChange={setElevenlabs}
             show={showElevenlabs}
             onToggleShow={() => setShowElevenlabs((v) => !v)}
             docsUrl="https://elevenlabs.io/app/settings/api-keys"
+            docsLabel="Get key →"
+            required
+          />
+          <KeyField
+            label="Deepgram API Key"
+            hint="Transcribes your spoken answers (speech-to-text)"
+            placeholder="..."
+            value={deepgram}
+            onChange={setDeepgram}
+            show={showDeepgram}
+            onToggleShow={() => setShowDeepgram((v) => !v)}
+            docsUrl="https://console.deepgram.com/signup"
             docsLabel="Get key →"
             required
           />
@@ -119,7 +134,7 @@ export default function KeysPage() {
               <>Save &amp; continue <ArrowRight className="h-4 w-4" /></>
             )}
           </button>
-          {(anthropic || elevenlabs) && (
+          {(anthropic || elevenlabs || deepgram) && (
             <button
               onClick={handleClear}
               className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"
