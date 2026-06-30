@@ -46,7 +46,7 @@ function smat(color: number, rough = 0.55, metal = 0): THREE.MeshStandardMateria
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
 }
 
-export function buildStylizedAvatar(variant: AvatarVariant = "female"): AvatarParts {
+export function buildStylizedAvatar(variant: AvatarVariant = "female", personality = "neutral"): AvatarParts {
   const P = PALETTE[variant];
   const male = variant === "male";
   const owned: THREE.Object3D[] = [];
@@ -197,10 +197,14 @@ export function buildStylizedAvatar(variant: AvatarVariant = "female"): AvatarPa
   const rightEye = makeEye(0.175);
 
   /* ── Brows ── */
+  const browAngle =
+    personality === "tough" ? 0.32 :
+    personality === "silent" ? 0.40 :
+    personality === "friendly" ? 0.08 : 0.18;
   const makeBrow = (x: number) => {
     const brow = keep(new THREE.Mesh(new THREE.CapsuleGeometry(male ? 0.017 : 0.0095, male ? 0.12 : 0.1, 6, 12), hairMat));
-    // Flat/heavier for male; thinner and gently arched for female.
-    brow.rotation.z = male ? Math.PI / 2 : x < 0 ? Math.PI / 2 + 0.18 : Math.PI / 2 - 0.18;
+    const angle = male ? browAngle * 0.65 : browAngle;
+    brow.rotation.z = x < 0 ? Math.PI / 2 + angle : Math.PI / 2 - angle;
     brow.scale.set(1, 1, 0.5);
     brow.position.set(x, male ? 0.21 : 0.225, 0.45);
     head.add(brow);
@@ -234,9 +238,10 @@ const VISEME_HINTS = ["jawopen", "mouthopen", "viseme_", "v_aa", "mouthfunnel"];
 
 export async function loadAvatar(
   url: string | undefined,
-  variant: AvatarVariant
+  variant: AvatarVariant,
+  personality = "neutral"
 ): Promise<AvatarParts> {
-  if (!url) return buildStylizedAvatar(variant);
+  if (!url) return buildStylizedAvatar(variant, personality);
 
   try {
     const loader = new GLTFLoader();
@@ -264,7 +269,7 @@ export async function loadAvatar(
       console.warn(
         `[avatar] ${url} has no facial blendshapes (visemes) — using the built-in ${variant} avatar instead. Use an Avaturn GLB for realistic lip-sync.`
       );
-      return buildStylizedAvatar(variant);
+      return buildStylizedAvatar(variant, personality);
     }
 
     const setMorph = (needle: string, value: number) => {

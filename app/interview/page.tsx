@@ -58,6 +58,7 @@ export default function InterviewPage() {
   const [thinking, setThinking] = useState(false);
   const [timerRunning, setTimerRunning] = useState(false);
   const [panelLog, setPanelLog] = useState<TranscriptEntry[]>([]);
+  const [browFurrow, setBrowFurrow] = useState(0);
 
   const endedRef = useRef(false);
   const speakingRef = useRef(false);
@@ -213,6 +214,13 @@ export default function InterviewPage() {
   useEffect(() => {
     cleanupRef.current = cleanup;
   }, [cleanup]);
+
+  /* ── Brow furrow from latest interviewer text ── */
+  useEffect(() => {
+    const text = interviewerLine || (panelLog.length > 0 && !panelLog[panelLog.length - 1].isYou
+      ? panelLog[panelLog.length - 1].text : "");
+    setBrowFurrow(computeBrowFurrow(text));
+  }, [interviewerLine, panelLog]);
 
   /* ── Re-attach webcam stream when layout switches to panel mode ── */
   useEffect(() => {
@@ -404,6 +412,8 @@ export default function InterviewPage() {
                 getMouthShape={activePanelSpeaker?.name === primaryName ? player.getMouthShape : ZERO_MOUTH}
                 glbUrl={GLB_URL ? `/avatar-${primaryGender}.glb` : undefined}
                 isGLB={GLB_URL}
+                personality={config.personality}
+                browFurrow={browFurrow}
               />
               <div className="w-px shrink-0 bg-white/10" />
               <PanelSlot
@@ -415,6 +425,8 @@ export default function InterviewPage() {
                 getMouthShape={activePanelSpeaker?.name === panelSecondary.name ? player.getMouthShape : ZERO_MOUTH}
                 glbUrl={GLB_URL ? `/avatar-${panelSecondary.gender}.glb` : undefined}
                 isGLB={GLB_URL}
+                personality={config.personality}
+                browFurrow={browFurrow}
               />
             </div>
             {/* Status chip centered at bottom of avatar area */}
@@ -460,6 +472,8 @@ export default function InterviewPage() {
               isGLB={GLB_URL}
               getAmplitude={player.getAmplitude}
               getMouthShape={player.getMouthShape}
+              personality={config.personality}
+              browFurrow={browFurrow}
               className="absolute inset-0 h-full w-full"
             />
             <div className="pointer-events-none absolute left-6 top-6">
@@ -516,6 +530,8 @@ function PanelSlot({
   getMouthShape,
   glbUrl,
   isGLB,
+  personality,
+  browFurrow,
 }: {
   name: string;
   gender: "male" | "female";
@@ -525,6 +541,8 @@ function PanelSlot({
   getMouthShape: () => { open: number; wide: number };
   glbUrl?: string;
   isGLB: boolean;
+  personality?: string;
+  browFurrow?: number;
 }) {
   return (
     <div className="relative flex-1 overflow-hidden">
@@ -553,6 +571,8 @@ function PanelSlot({
         isGLB={isGLB}
         getAmplitude={getAmplitude}
         getMouthShape={getMouthShape}
+        personality={personality}
+        browFurrow={isSpeaking ? browFurrow : 0}
         className="absolute inset-0 h-full w-full"
       />
 
@@ -588,6 +608,20 @@ function PanelSlot({
       </AnimatePresence>
     </div>
   );
+}
+
+/* ──────────────────────── Sentiment → brow furrow ──────────────────────── */
+
+const CHALLENGE_WORDS = ["why", "explain", "justify", "however", "but", "concern", "issue", "problem", "fail", "weakness", "disagree", "doubt", "what went wrong", "challenge", "critical"];
+const POSITIVE_WORDS = ["great", "excellent", "impressive", "love that", "perfect", "well done", "exactly", "agree", "interesting"];
+
+function computeBrowFurrow(text: string): number {
+  if (!text) return 0;
+  const lower = text.toLowerCase();
+  let score = 0;
+  CHALLENGE_WORDS.forEach((w) => { if (lower.includes(w)) score += 0.22; });
+  POSITIVE_WORDS.forEach((w) => { if (lower.includes(w)) score -= 0.15; });
+  return Math.max(0, Math.min(1, score));
 }
 
 /* ─────────────────────────────── Helpers ────────────────────────────────── */

@@ -11,6 +11,8 @@ export interface AvatarUpdateInput {
   /** Mouth spread 0..1 from high-frequency energy. */
   wide?: number;
   state: AvatarState;
+  /** 0..1 text-sentiment furrow signal (0 = neutral, 1 = maximum challenge/intensity). */
+  browFurrow?: number;
 }
 
 export interface AvatarAnimator {
@@ -36,6 +38,8 @@ export function createAvatarAnimator(parts: AvatarParts): AvatarAnimator {
   const baseHeadRotY = head.rotation.y;
   const baseHeadRotZ = head.rotation.z;
   const baseBrowY = leftBrow.position.y;
+  const baseBrowZLeft = (leftBrow as THREE.Object3D).rotation.z;
+  const baseBrowZRight = (rightBrow as THREE.Object3D).rotation.z;
   const baseMouthY = mouth.scale.y;
   const baseMouthX = mouth.scale.x;
 
@@ -53,7 +57,7 @@ export function createAvatarAnimator(parts: AvatarParts): AvatarAnimator {
   let mouthWide = 0;
 
   return {
-    update(dt, { amplitude, open = amplitude, wide = 0, state }) {
+    update(dt, { amplitude, open = amplitude, wide = 0, state, browFurrow = 0 }) {
       dt = Math.min(dt, 0.05);
       time += dt;
 
@@ -146,6 +150,14 @@ export function createAvatarAnimator(parts: AvatarParts): AvatarAnimator {
       const browY = baseBrowY + targetBrow * 0.03;
       leftBrow.position.y = damp(leftBrow.position.y, browY, 8, dt);
       rightBrow.position.y = damp(rightBrow.position.y, browY, 8, dt);
+
+      // Brow angle — personality base + state delta + sentiment nudge
+      const stateDelta =
+        state === "thinking" ? 0.18 :
+        state === "listening" ? -0.06 : 0;
+      const angleDelta = Math.max(-0.12, Math.min(0.28, stateDelta + browFurrow * 0.18));
+      (leftBrow as THREE.Object3D).rotation.z = damp((leftBrow as THREE.Object3D).rotation.z, baseBrowZLeft + angleDelta, 5, dt);
+      (rightBrow as THREE.Object3D).rotation.z = damp((rightBrow as THREE.Object3D).rotation.z, baseBrowZRight - angleDelta, 5, dt);
 
       const openTarget =
         state === "speaking"

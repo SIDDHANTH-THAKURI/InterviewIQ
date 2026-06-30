@@ -19,6 +19,10 @@ interface AvatarCanvasProps {
   className?: string;
   /** True when a GLB is loaded (changes camera framing to zoom in on face). */
   isGLB?: boolean;
+  /** Interview personality — sets base brow angle at load time. */
+  personality?: string;
+  /** 0..1 real-time furrow signal from text sentiment. */
+  browFurrow?: number;
 }
 
 export function AvatarCanvas({
@@ -29,6 +33,8 @@ export function AvatarCanvas({
   getMouthShape,
   className,
   isGLB = false,
+  personality = "neutral",
+  browFurrow = 0,
 }: AvatarCanvasProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -39,10 +45,12 @@ export function AvatarCanvas({
   const ampRef = useRef<typeof getAmplitude>(getAmplitude);
   const mouthRef = useRef<typeof getMouthShape>(getMouthShape);
   const isGLBRef = useRef(isGLB);
+  const browFurrowRef = useRef(browFurrow);
   useEffect(() => void (stateRef.current = state), [state]);
   useEffect(() => void (ampRef.current = getAmplitude), [getAmplitude]);
   useEffect(() => void (mouthRef.current = getMouthShape), [getMouthShape]);
   useEffect(() => void (isGLBRef.current = isGLB), [isGLB]);
+  useEffect(() => void (browFurrowRef.current = browFurrow), [browFurrow]);
 
   /* ── Renderer / scene / lights / loop (mount once) ── */
   useEffect(() => {
@@ -130,6 +138,7 @@ export function AvatarCanvas({
         open: openDriven,
         wide: shape.wide,
         state: st,
+        browFurrow: browFurrowRef.current,
       });
       renderer.render(scene, cameraRef.cam);
     };
@@ -152,7 +161,7 @@ export function AvatarCanvas({
   /* ── Load / swap the avatar when variant or GLB changes ── */
   useEffect(() => {
     let cancelled = false;
-    loadAvatar(glbUrl, variant).then((p) => {
+    loadAvatar(glbUrl, variant, personality).then((p) => {
       if (cancelled) {
         p.dispose();
         return;
@@ -183,7 +192,7 @@ export function AvatarCanvas({
     return () => {
       cancelled = true;
     };
-  }, [variant, glbUrl]);
+  }, [variant, glbUrl, personality]);
 
   return <div ref={mountRef} className={className} />;
 }
