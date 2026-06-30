@@ -214,6 +214,17 @@ export default function InterviewPage() {
     cleanupRef.current = cleanup;
   }, [cleanup]);
 
+  /* ── Re-attach webcam stream when layout switches to panel mode ── */
+  useEffect(() => {
+    if (!panelSecondary) return;
+    const video = webcam.videoRef.current;
+    const stream = webcam.stream.current;
+    if (video && stream && video.srcObject !== stream) {
+      video.srcObject = stream;
+      video.play().catch(() => {});
+    }
+  }, [panelSecondary, webcam.videoRef, webcam.stream]);
+
   /* ── Mount: guard environment, then start media + connect ── */
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
