@@ -372,7 +372,7 @@ export default function InterviewPage() {
                 avatarState={getPanelAvatarState(primaryName, activePanelSpeaker, avatarState, thinking)}
                 isSpeaking={activePanelSpeaker?.name === primaryName}
                 getAmplitude={activePanelSpeaker?.name === primaryName ? player.getAmplitude : ZERO}
-                getMouthShape={activePanelSpeaker?.name === primaryName ? player.getMouthShape : ZERO}
+                getMouthShape={activePanelSpeaker?.name === primaryName ? player.getMouthShape : ZERO_MOUTH}
                 glbUrl={GLB_URL ? `/avatar-${primaryGender}.glb` : undefined}
                 isGLB={GLB_URL}
               />
@@ -383,7 +383,7 @@ export default function InterviewPage() {
                 avatarState={getPanelAvatarState(panelSecondary.name, activePanelSpeaker, avatarState, thinking)}
                 isSpeaking={activePanelSpeaker?.name === panelSecondary.name}
                 getAmplitude={activePanelSpeaker?.name === panelSecondary.name ? player.getAmplitude : ZERO}
-                getMouthShape={activePanelSpeaker?.name === panelSecondary.name ? player.getMouthShape : ZERO}
+                getMouthShape={activePanelSpeaker?.name === panelSecondary.name ? player.getMouthShape : ZERO_MOUTH}
                 glbUrl={GLB_URL ? `/avatar-${panelSecondary.gender}.glb` : undefined}
                 isGLB={GLB_URL}
               />
@@ -466,6 +466,7 @@ export default function InterviewPage() {
 /* ─────────────────────────── Panel helpers ─────────────────────────────── */
 
 const ZERO = () => 0;
+const ZERO_MOUTH = () => ({ open: 0, wide: 0 });
 
 function getPanelAvatarState(
   name: string,
@@ -494,7 +495,7 @@ function PanelSlot({
   avatarState: AvatarState;
   isSpeaking: boolean;
   getAmplitude: () => number;
-  getMouthShape: () => number;
+  getMouthShape: () => { open: number; wide: number };
   glbUrl?: string;
   isGLB: boolean;
 }) {
