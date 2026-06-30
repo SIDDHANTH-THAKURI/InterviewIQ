@@ -11,6 +11,7 @@
 export type InterviewType = "behavioral" | "technical" | "mixed";
 export type Difficulty = "entry" | "mid" | "senior" | "brutal";
 export type Personality = "friendly" | "neutral" | "tough" | "silent";
+export type ClaudeModel = "haiku" | "sonnet" | "opus";
 /** Target duration, in minutes. */
 export type DurationMinutes = 10 | 20 | 30;
 
@@ -35,6 +36,8 @@ export interface InterviewConfig {
   jobRole?: string;
   /** When true, two interviewers conduct the session together. */
   panelMode?: boolean;
+  /** Claude model used for brain + feedback. Defaults to sonnet. */
+  model?: ClaudeModel;
 }
 
 export interface InterviewDocuments {
@@ -56,6 +59,7 @@ export const DEFAULT_CONFIG: InterviewConfig = {
   duration: 20,
   personality: "neutral",
   mode: "standard",
+  model: "sonnet",
 };
 
 /* ──────────────────────────── Vision analysis ───────────────────────────── */

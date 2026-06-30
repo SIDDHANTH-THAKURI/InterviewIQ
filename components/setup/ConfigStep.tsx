@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Users } from "lucide-react";
 import { useInterviewStore } from "@/store/interviewStore";
 import {
+  type ClaudeModel,
   type Difficulty,
   type DurationMinutes,
   type InterviewType,
@@ -42,6 +43,18 @@ const PERSONALITIES: Opt<Personality>[] = [
   { value: "silent", label: "Silent" },
 ];
 
+const MODELS: Opt<ClaudeModel>[] = [
+  { value: "haiku", label: "Haiku 4.5" },
+  { value: "sonnet", label: "Sonnet 4.6" },
+  { value: "opus", label: "Opus 4.8" },
+];
+
+const MODEL_DESC: Record<ClaudeModel, string> = {
+  haiku: "Fastest and cheapest. Good for quick practice runs.",
+  sonnet: "Best balance of speed, quality and cost. Recommended.",
+  opus: "Highest quality. Slower responses, uses more of your credits.",
+};
+
 const DIFFICULTY_DESC: Record<Difficulty, string> = {
   entry: "Approachable questions with room to think and gentle hints.",
   mid: "Solid, role-relevant questions. Vague answers get a light push.",
@@ -76,6 +89,10 @@ export function ConfigStep() {
 
       <Group label="Interviewer personality" caption={PERSONALITY_DESC[config.personality]}>
         <Chips options={PERSONALITIES} selected={config.personality} onSelect={(personality) => setConfig({ personality })} />
+      </Group>
+
+      <Group label="AI model" caption={MODEL_DESC[config.model ?? "sonnet"]}>
+        <Chips options={MODELS} selected={config.model ?? "sonnet"} onSelect={(model) => setConfig({ model })} />
       </Group>
 
       <Group label="Format">

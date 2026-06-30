@@ -18,10 +18,20 @@ import {
 
 /* ───────────────────────────────── Models ───────────────────────────────── */
 
-/** The interviewer's brain: adaptive questioning + final feedback. */
-export const BRAIN_MODEL = "claude-opus-4-8";
-export const FEEDBACK_MODEL = "claude-opus-4-8";
-/** Vision runs every ~3s, so it uses the fast/cheap model for low latency. */
+import type { ClaudeModel } from "../types/interview";
+
+export const MODEL_IDS: Record<ClaudeModel, string> = {
+  haiku: "claude-haiku-4-5-20251001",
+  sonnet: "claude-sonnet-4-6",
+  opus: "claude-opus-4-8",
+};
+
+/** Resolve a ClaudeModel key to the actual API model string. */
+export function resolveModel(model?: ClaudeModel): string {
+  return MODEL_IDS[model ?? "sonnet"];
+}
+
+/** Vision runs on Haiku always — fast, cheap, 3-second cadence. */
 export const VISION_MODEL = "claude-haiku-4-5-20251001";
 
 let _client: Anthropic | null = null;

@@ -1,7 +1,6 @@
 import {
   getAnthropic,
-  BRAIN_MODEL,
-  FEEDBACK_MODEL,
+  resolveModel,
   FEEDBACK_SYSTEM_PROMPT,
   buildSystemPrompt,
   buildPanelSystemPrompt,
@@ -382,7 +381,7 @@ export class InterviewOrchestrator {
 
     try {
       const stream = getAnthropic(this.sessionKeys.anthropic).messages.stream({
-        model: BRAIN_MODEL,
+        model: resolveModel(this.config.model),
         max_tokens: 400,
         system: this.systemPrompt,
         messages: this.buildMessages(),
@@ -448,7 +447,7 @@ export class InterviewOrchestrator {
     let full = "";
     try {
       const stream = getAnthropic(this.sessionKeys.anthropic).messages.stream({
-        model: BRAIN_MODEL,
+        model: resolveModel(this.config.model),
         max_tokens: 600,
         system: this.systemPrompt,
         messages: this.buildMessages(),
@@ -622,7 +621,7 @@ export class InterviewOrchestrator {
     const transcript = this.buildTranscript();
     try {
       const resp = await getAnthropic(this.sessionKeys.anthropic).messages.create({
-        model: FEEDBACK_MODEL,
+        model: resolveModel(this.config.model),
         max_tokens: 2048,
         system: FEEDBACK_SYSTEM_PROMPT,
         messages: [
