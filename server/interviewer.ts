@@ -41,7 +41,7 @@ import {
 const COMPLETE_TOKEN = "[INTERVIEW_COMPLETE]";
 
 const OPENING_INSTRUCTION =
-  "[The interview is beginning. The candidate has just joined the call. Start with a warm, natural introduction: greet them, introduce yourself by name, and ask a short icebreaker (how are they, are they ready, etc.). Do NOT jump straight into interview questions yet — just make them comfortable first. Keep it conversational and brief.]";
+  "[The interview is beginning. The candidate has just joined the call. Start with a warm, natural introduction: greet them, introduce yourself by name, and ask a short icebreaker. Also kindly mention they should be in a quiet space — background noise makes it hard to hear them clearly. Do NOT start interview questions yet. Keep it natural and brief.]";
 
 const MOVEON_INSTRUCTION =
   "[The candidate has gone quiet and may be stuck or unsure. Warmly reassure them that it's completely okay, then either rephrase your previous question more simply or move on to a different, easier one. Keep it short and kind.]";
@@ -479,6 +479,7 @@ export class InterviewOrchestrator {
       const ttsInstance = isPrimary ? this.tts! : (this.tts2 ?? this.tts!);
 
       this.emit({ type: "panel:speaker", name: seg.name, gender });
+      this.emit({ type: "panel:segment", name: seg.name, text: seg.text });
       const tts = ttsInstance.createSession({
         onStart: () => this.emit({ type: "avatar:speaking:start" }),
         onAudio: (buf) => this.emitAudio(buf),

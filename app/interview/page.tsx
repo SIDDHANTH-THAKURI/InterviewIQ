@@ -13,7 +13,7 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useMicrophone } from "@/hooks/useMicrophone";
 import { useWebcam } from "@/hooks/useWebcam";
 import { WebcamFeed } from "@/components/interview/WebcamFeed";
-import { LiveTranscript } from "@/components/interview/LiveTranscript";
+import { LiveTranscript, type TranscriptEntry } from "@/components/interview/LiveTranscript";
 import { SessionTimer } from "@/components/interview/SessionTimer";
 import type { AvatarState } from "@/components/avatar/useAvatarControls";
 import { VISION_INTERVAL_MS, CV_METRICS_INTERVAL_MS, type ServerMessage } from "@/types/interview";
@@ -57,10 +57,12 @@ export default function InterviewPage() {
   const [candidateInterim, setCandidateInterim] = useState("");
   const [thinking, setThinking] = useState(false);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [panelLog, setPanelLog] = useState<TranscriptEntry[]>([]);
 
   const endedRef = useRef(false);
   const speakingRef = useRef(false);
   const startSentRef = useRef(false);
+  const isPanelRef = useRef(false);
   const visionTimer = useRef<number | null>(null);
   const cvTimer = useRef<number | null>(null);
   const trackerRef = useRef<import("@/lib/visionTracker").VisionTracker | null>(null);
@@ -74,11 +76,13 @@ export default function InterviewPage() {
           if (msg.state === "live") setStatus("live");
           if (msg.message) setInterviewerName(msg.message);
           if (msg.gender) { setVariant(msg.gender); setPrimaryGender(msg.gender); }
-          if (msg.panelSecondary) setPanelSecondary(msg.panelSecondary as { name: string; gender: "male" | "female" });
+          if (msg.panelSecondary) { setPanelSecondary(msg.panelSecondary as { name: string; gender: "male" | "female" }); isPanelRef.current = true; }
           break;
         case "panel:speaker":
           setActivePanelSpeaker({ name: msg.name, gender: msg.gender });
-          // Do NOT touch variant here — panel avatars use fixed primaryGender / panelSecondary.gender
+          break;
+        case "panel:segment":
+          setPanelLog((prev) => [...prev, { speaker: msg.name, text: msg.text, isYou: false }]);
           break;
         case "ai:thinking":
           setStatus((s) => (s === "connecting" ? "live" : s));
@@ -112,16 +116,30 @@ export default function InterviewPage() {
           }
           break;
         case "interview:question":
-          setInterviewerLine(msg.text);
-          setCandidateFinal("");
-          setCandidateInterim("");
+          if (!isPanelRef.current) {
+            setInterviewerLine(msg.text);
+            setCandidateFinal("");
+            setCandidateInterim("");
+          }
           break;
         case "transcript:interim":
           setCandidateInterim(msg.text);
           break;
         case "transcript:final":
-          setCandidateFinal((prev) => (prev ? prev + " " : "") + msg.text);
           setCandidateInterim("");
+          if (isPanelRef.current) {
+            setPanelLog((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.isYou) {
+                return prev.map((e, i) =>
+                  i === prev.length - 1 ? { ...e, text: e.text + " " + msg.text } : e
+                );
+              }
+              return [...prev, { speaker: "You", text: msg.text, isYou: true }];
+            });
+          } else {
+            setCandidateFinal((prev) => (prev ? prev + " " : "") + msg.text);
+          }
           break;
         case "interview:complete":
           endedRef.current = true;
@@ -401,9 +419,7 @@ export default function InterviewPage() {
             <div className="h-full overflow-y-auto px-6 py-4" style={{ paddingRight: "13rem" }}>
               <LiveTranscript
                 className="min-h-0"
-                interviewerName={activePanelSpeaker?.name || primaryName}
-                interviewerLine={interviewerLine}
-                candidateFinal={candidateFinal}
+                entries={panelLog}
                 candidateInterim={candidateInterim}
                 thinking={thinking}
               />

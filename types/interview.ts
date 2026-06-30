@@ -274,6 +274,12 @@ export interface ServerPanelSpeaker {
   name: string;
   gender: Gender;
 }
+/** Panel mode: text spoken by each individual segment (for per-speaker transcript). */
+export interface ServerPanelSegment {
+  type: "panel:segment";
+  name: string;
+  text: string;
+}
 export interface ServerError {
   type: "error";
   message: string;
@@ -291,6 +297,7 @@ export type ServerMessage =
   | ServerComplete
   | ServerStatus
   | ServerPanelSpeaker
+  | ServerPanelSegment
   | ServerError;
 
 /* ─────────────────────────────── Constants ──────────────────────────────── */

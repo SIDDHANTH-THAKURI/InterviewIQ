@@ -4,6 +4,12 @@ import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
+export interface TranscriptEntry {
+  speaker: string;
+  text: string;
+  isYou: boolean;
+}
+
 interface LiveTranscriptProps {
   interviewerName?: string;
   interviewerLine?: string;
@@ -11,13 +17,9 @@ interface LiveTranscriptProps {
   candidateInterim?: string;
   thinking?: boolean;
   className?: string;
+  entries?: TranscriptEntry[];
 }
 
-/**
- * The subtle, ambient transcript shown beneath the webcam pip. Deliberately
- * shows only the live exchange — the current interviewer line and the
- * candidate's words as they speak.
- */
 export function LiveTranscript({
   interviewerName = "Interviewer",
   interviewerLine,
@@ -25,19 +27,54 @@ export function LiveTranscript({
   candidateInterim,
   thinking,
   className,
+  entries,
 }: LiveTranscriptProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [interviewerLine, candidateFinal, candidateInterim, thinking]);
+  }, [interviewerLine, candidateFinal, candidateInterim, thinking, entries]);
 
+  /* ── Panel mode: scrollable log of named entries ── */
+  if (entries !== undefined) {
+    return (
+      <div className={cn("flex flex-col gap-4 overflow-y-auto pr-1", className)}>
+        {entries.map((entry, i) => (
+          <div key={i}>
+            <p className={cn(
+              "mb-1 text-[11px] font-medium uppercase tracking-[0.18em]",
+              entry.isYou ? "text-cream/40" : "text-accent/80"
+            )}>
+              {entry.speaker}
+            </p>
+            <p className={cn(
+              "text-[15px] leading-relaxed",
+              entry.isYou ? "text-cream/70" : "text-cream/90"
+            )}>
+              {entry.text}
+            </p>
+          </div>
+        ))}
+
+        {thinking && <ThinkingDots />}
+
+        {candidateInterim && (
+          <div>
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-cream/40">You</p>
+            <p className="text-[15px] leading-relaxed italic text-cream/40">{candidateInterim}</p>
+          </div>
+        )}
+
+        <div ref={endRef} />
+      </div>
+    );
+  }
+
+  /* ── Standard mode: single current exchange ── */
   const hasCandidate = !!(candidateFinal || candidateInterim);
 
   return (
     <div className={cn("flex flex-col gap-5 overflow-y-auto pr-1", className)}>
-      {/* Interviewer line updates in place (no per-word re-animation) so the
-          text builds up smoothly in step with the voice. */}
       {interviewerLine && (
         <div>
           <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-accent/80">

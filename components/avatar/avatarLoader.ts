@@ -200,7 +200,7 @@ export function buildStylizedAvatar(variant: AvatarVariant = "female"): AvatarPa
   const makeBrow = (x: number) => {
     const brow = keep(new THREE.Mesh(new THREE.CapsuleGeometry(male ? 0.017 : 0.0095, male ? 0.12 : 0.1, 6, 12), hairMat));
     // Flat/heavier for male; thinner and gently arched for female.
-    brow.rotation.z = male ? 0 : x < 0 ? -0.16 : 0.16;
+    brow.rotation.z = male ? Math.PI / 2 : x < 0 ? Math.PI / 2 + 0.18 : Math.PI / 2 - 0.18;
     brow.scale.set(1, 1, 0.5);
     brow.position.set(x, male ? 0.21 : 0.225, 0.45);
     head.add(brow);
