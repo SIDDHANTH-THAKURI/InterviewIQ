@@ -59,6 +59,7 @@ For "strongerAnswer": rewrite the candidate's answer as they could have said it 
 Write "headline" as one punchy sentence. "summary" is 3–4 sentences. Give 2–4 strengths and exactly 3 improvements, each with a concrete drill they can do in the next session. Review every substantive candidate answer (max 10), skipping small talk. Plain text in all strings, no markdown.`;
 
 export interface FeedbackInput {
+  apiKey: string;
   transcript: TranscriptTurn[];
   config: InterviewConfig;
   context: InterviewContext;
@@ -103,6 +104,7 @@ For nextSession, pick the single practice format that would help most next, with
 
   try {
     const { data, costUsd } = await structured<InterviewFeedback>({
+      apiKey: input.apiKey,
       model: MODELS.coach,
       system: SYSTEM,
       user,

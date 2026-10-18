@@ -268,7 +268,10 @@ export interface AccessInfo {
 
 export interface ClientStartMessage {
   type: "interview:start";
-  pass: string;
+  /** Invite pass — the session runs on the owner's keys. */
+  pass?: string;
+  /** Bring-your-own-keys — used for this session only, never stored. */
+  keys?: { anthropic: string; elevenlabs?: string; deepgram?: string };
   sessionId: string;
   config: InterviewConfig;
   context: InterviewContext;

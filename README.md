@@ -1,8 +1,13 @@
 # InterviewIQ
 
-**Walk in ready.** An invite-only AI interview coach. A live interviewer talks with you out loud, listens until you've finished, adapts every follow-up to what you actually said — and then shows you, answer by answer, how to say it better.
+**Walk in ready.** An AI interview coach. A live interviewer talks with you out loud, listens until you've finished, adapts every follow-up to what you actually said — and then shows you, answer by answer, how to say it better.
 
-You run it with your own API keys and share it with people who need it. They get a link — no account, no password, no keys — and everything they practice stays in their own browser.
+There are two ways in:
+
+- **Invite link (free for them, on your keys).** You run it with your API keys and send a private link to someone who needs it. No account, no password — and they never see or touch your keys. You set their monthly limits.
+- **Bring your own keys.** Anyone else can paste their own Anthropic key (plus optional ElevenLabs and Deepgram keys) and practice on their own account. Your keys are never used for them. Turn this off with `ALLOW_BYOK=false`.
+
+Either way, everything they practice stays in their own browser.
 
 ---
 
@@ -17,14 +22,15 @@ You run it with your own API keys and share it with people who need it. They get
 | **Prep packs** | Paste a job post → likely questions with answer outlines, a STAR story bank built from the resume, concerns to get ahead of, questions to ask back, a day-of checklist, and optional live company research. |
 | **Progress** | Readiness score, trend chart, skill averages, streaks, and a recommended next session. |
 | **Languages** | English, English + Hinglish/mixed, Hindi, Spanish, French, German, Portuguese. |
-| **Invite-only** | An owner console to create links, set monthly minute/prep limits, pause or rotate links, and see usage and estimated cost per person. |
+| **Invites + own keys** | An owner console to create links, set monthly minute/prep limits, pause or rotate links, and see usage and estimated cost per person — plus a "use my own keys" page with live key testing for everyone else. |
 
 ### Privacy model
 
 - **No database of anyone's answers.** Profiles, resumes, transcripts, reports and prep packs live in each person's browser (IndexedDB). They can export, restore or wipe it from their profile.
 - The server keeps one small file — the invite registry (names, limits, usage counters) — in `~/.interviewiq/access.json` (or `DATA_DIR`).
 - Resumes are parsed in the browser. Camera metrics (eye contact, steadiness, engagement) are computed on-device with MediaPipe; at most one still frame per minute is sent for a qualitative read, and only when the camera is on.
-- Your API keys never leave the server.
+- **Your keys never leave the server, and are only used for valid invite links.** The server reads them in one place (`lib/server/keys.ts`, `ownerKeys()`), only after an invite is verified. Every AI call must be handed a key explicitly — there is no default to fall back on — so a request without a valid invite can only ever run on the visitor's own keys.
+- **Visitors' own keys** are stored only in their browser, sent over the encrypted connection per request/session, used in memory, and never written to disk or logged. A rejected or missing key simply fails; it is never topped up with yours.
 
 ---
 
@@ -53,6 +59,7 @@ Then:
 | `APP_SECRET` | Signs invite links. Changing it invalidates all links. If unset, one is generated in the data folder. |
 | `ADMIN_PASSCODE` | Unlocks `/admin`. |
 | `OWNER_NAME` | Shown to friends as "<name> invited you". |
+| `ALLOW_BYOK` | `true` (default) lets anyone use the app with their own keys. `false` makes it invite-only. |
 
 Optional: voice IDs, model overrides, `DATA_DIR`, `TURN_SETTLE_MS`, and cost-estimate rates — see `.env.example`.
 
@@ -150,7 +157,9 @@ npm run invite     # create an invite from the terminal
 
 | Symptom | Fix |
 | --- | --- |
-| "You need a valid invite" | Open the full invite link on that device. Links stop working if paused, rotated, deleted, expired, or if `APP_SECRET` changed. |
+| "You need a valid invite" | Open the full invite link on that device — or use **Use my own keys**. Links stop working if paused, rotated, deleted, expired, or if `APP_SECRET` changed. |
+| "Your Anthropic key was rejected" | The visitor's own key is wrong or revoked — fix it at `/keys`. |
+| Own-keys user can't speak / hear | Speaking needs a Deepgram key and the interviewer's voice needs an ElevenLabs key; without them the app falls back to typing and captions. |
 | Friend's link won't open | It points at `localhost`. Create invites from your tunnel or deployed URL (see *Sharing*). |
 | Microphone blocked | Allow it in the address bar and reload — or choose **Type** in practice settings. Mics require https or localhost. |
 | No interviewer voice | Check `ELEVENLABS_API_KEY`, unmute the tab, or turn off "Interviewer speaks out loud" for captions only. |

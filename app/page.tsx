@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { AuraOrb, type AuraMood } from "@/components/aura/AuraOrb";
 import { Badge, Button, Eyebrow, Input, Logo, Modal } from "@/components/ui/kit";
-import { getPass } from "@/lib/client/api";
+import { accessMode, fetchConfig } from "@/lib/client/api";
 import { cn } from "@/lib/cn";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -38,20 +38,26 @@ const SCRIPT: { who: "ai" | "you"; text: string; mood: AuraMood }[] = [
 
 export default function Landing() {
   const [hasPass, setHasPass] = useState(false);
+  const [byok, setByok] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
-  useEffect(() => setHasPass(!!getPass()), []);
+  useEffect(() => {
+    setHasPass(!!accessMode());
+    fetchConfig()
+      .then((c) => setByok(c.byok))
+      .catch(() => {});
+  }, []);
 
   return (
     <main className="relative overflow-x-clip">
       <Nav hasPass={hasPass} onInvite={() => setInviteOpen(true)} />
-      <Hero hasPass={hasPass} onInvite={() => setInviteOpen(true)} />
+      <Hero hasPass={hasPass} byok={byok} onInvite={() => setInviteOpen(true)} />
       <Loop />
       <Formats />
       <Nerves />
       <Privacy />
-      <FinalCta hasPass={hasPass} onInvite={() => setInviteOpen(true)} />
+      <FinalCta hasPass={hasPass} byok={byok} onInvite={() => setInviteOpen(true)} />
       <footer className="relative border-t hairline px-6 py-10 text-center text-xs text-faint">
-        InterviewIQ · invite-only · your practice data never leaves your device
+        InterviewIQ · invite or bring your own keys · your practice data never leaves your device
       </footer>
       <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </main>
@@ -67,7 +73,7 @@ function Nav({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void }) 
         <Logo />
         <div className="flex items-center gap-2">
           <Badge tone="ember" className="hidden sm:inline-flex">
-            <Lock className="h-3 w-3" /> Invite only
+            <Lock className="h-3 w-3" /> Private by design
           </Badge>
           {hasPass ? (
             <Button href="/home" size="sm">
@@ -86,7 +92,7 @@ function Nav({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void }) 
 
 /* ───────────────────────────── Hero ───────────────────────────── */
 
-function Hero({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void }) {
+function Hero({ hasPass, byok, onInvite }: { hasPass: boolean; byok: boolean; onInvite: () => void }) {
   const ref = useRef<HTMLElement | null>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
   const orbY = useTransform(scrollYProgress, [0, 1], [0, 160]);
@@ -195,12 +201,26 @@ function Hero({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void })
                 Continue practicing <ArrowRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button variant="glow" size="lg" onClick={onInvite}>
-                Use my invite <ArrowRight className="h-4 w-4" />
-              </Button>
+              <>
+                <Button variant="glow" size="lg" onClick={onInvite}>
+                  I have an invite <ArrowRight className="h-4 w-4" />
+                </Button>
+                {byok && (
+                  <Button variant="secondary" size="lg" href="/keys">
+                    <KeyRound className="h-4 w-4" /> Use my own keys
+                  </Button>
+                )}
+              </>
             )}
-            <span className="text-sm text-faint">No sign-up. No credit card. Just your link.</span>
           </motion.div>
+          <motion.p
+            className="mt-4 text-sm text-faint"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.9, delay: 0.8 }}
+          >
+            No sign-up. {byok ? "Got an invite? It's free. Otherwise, bring your own API keys." : "Just your invite link."}
+          </motion.p>
         </motion.div>
 
         <motion.div style={{ y: orbY, scale: orbScale }} className="relative -mt-6 aspect-square w-full lg:-mr-16 lg:mt-0">
@@ -535,7 +555,8 @@ function Privacy() {
           <h3 className="text-xl font-semibold tracking-tight">Your practice stays yours.</h3>
           <p className="mt-2 text-[15px] leading-relaxed text-mute">
             Your resume, transcripts and reports are saved only in this browser — there's no account and no database of
-            your answers. Camera analysis runs on your device; you can switch the camera off entirely.
+            your answers. If you bring your own API keys, they stay in your browser too and are used only for your sessions.
+            Camera analysis runs on your device; you can switch the camera off entirely.
           </p>
         </div>
       </Reveal>
@@ -543,7 +564,7 @@ function Privacy() {
   );
 }
 
-function FinalCta({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void }) {
+function FinalCta({ hasPass, byok, onInvite }: { hasPass: boolean; byok: boolean; onInvite: () => void }) {
   return (
     <section className="relative overflow-hidden px-6 pb-32 pt-16 text-center">
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 opacity-70">
@@ -555,15 +576,22 @@ function FinalCta({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => voi
           <br />
           <span className="italic text-ember-grad">starts here.</span>
         </h2>
-        <div className="mt-10 flex justify-center">
+        <div className="mt-10 flex flex-wrap justify-center gap-3">
           {hasPass ? (
             <Button href="/home" variant="glow" size="lg">
               Open InterviewIQ <ArrowRight className="h-4 w-4" />
             </Button>
           ) : (
-            <Button variant="glow" size="lg" onClick={onInvite}>
-              Use my invite <ArrowRight className="h-4 w-4" />
-            </Button>
+            <>
+              <Button variant="glow" size="lg" onClick={onInvite}>
+                I have an invite <ArrowRight className="h-4 w-4" />
+              </Button>
+              {byok && (
+                <Button variant="secondary" size="lg" href="/keys">
+                  <KeyRound className="h-4 w-4" /> Use my own keys
+                </Button>
+              )}
+            </>
           )}
         </div>
       </Reveal>
@@ -593,7 +621,7 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
   return (
     <Modal open={open} onClose={onClose} title="Open your invite">
       <p className="-mt-2 mb-5 text-sm text-mute">
-        InterviewIQ is invite-only. Paste the link you were sent — that's all you need.
+        Paste the invite link you were sent — that's all you need.
       </p>
       <form onSubmit={submit} className="space-y-3">
         <Input

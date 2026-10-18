@@ -20,7 +20,7 @@ const NAV = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { status, profile, access, deniedReason, bootstrap } = useApp();
+  const { status, profile, access, mode, deniedReason, bootstrap } = useApp();
 
   useEffect(() => {
     void bootstrap();
@@ -75,6 +75,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button href="/practice" variant="glow" className="w-full">
             <Mic className="h-4 w-4" /> Start practicing
           </Button>
+          {mode === "byok" && (
+            <Link href="/keys" className="flex items-center gap-3 rounded-2xl border hairline bg-white/[0.02] p-4 text-xs transition hover:bg-white/[0.04]">
+              <KeyRound className="h-4 w-4 text-gold" />
+              <span className="flex-1">
+                <span className="block font-medium text-paper-dim">Using your own keys</span>
+                <span className="text-faint">No limits · manage keys</span>
+              </span>
+            </Link>
+          )}
           {minutesLeft !== null && access && (
             <div className="rounded-2xl border hairline bg-white/[0.02] p-4">
               <div className="flex items-baseline justify-between text-xs">
@@ -136,16 +145,16 @@ function Locked({ reason }: { reason?: string }) {
         <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-ember/12 text-ember-soft">
           <KeyRound className="h-5 w-5" />
         </span>
-        <h1 className="mt-5 text-2xl font-semibold tracking-tight">InterviewIQ is invite-only</h1>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight">Let's get you in</h1>
         <p className="mt-2 text-[15px] text-mute">
-          {reason || "Open the invite link you were sent on this device to get started."}
+          {reason || "Open the invite link you were sent on this device — or use your own API keys."}
         </p>
-        <div className="mt-7 flex justify-center gap-2">
+        <div className="mt-7 flex flex-wrap justify-center gap-2">
+          <Button href="/keys" variant="glow">
+            <KeyRound className="h-4 w-4" /> Use my own keys
+          </Button>
           <Button href="/" variant="secondary">
             Back home
-          </Button>
-          <Button href="/admin" variant="ghost">
-            Admin
           </Button>
         </div>
       </div>

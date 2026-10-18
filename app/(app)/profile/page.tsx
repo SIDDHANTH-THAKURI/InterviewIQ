@@ -2,10 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, LogOut, Save, ShieldCheck, Sparkles, Trash2, Upload } from "lucide-react";
+import { Download, KeyRound, LogOut, Save, ShieldCheck, Sparkles, Trash2, Upload } from "lucide-react";
 import { ResumeDrop } from "@/components/ResumeDrop";
 import { Badge, Button, Card, Eyebrow, Field, Input, Modal, useToast } from "@/components/ui/kit";
-import { api } from "@/lib/client/api";
+import { api, maskKey } from "@/lib/client/api";
 import { exportAll, importAll, wipeAll, type Backup } from "@/lib/client/db";
 import { useApp } from "@/lib/client/store";
 import { LANGUAGE_LABELS, type CandidateProfile, type InterviewLanguage } from "@/types/interview";
@@ -22,7 +22,7 @@ const LEVELS: Record<CandidateProfile["experienceLevel"], string> = {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { profile, access, updateProfile, signOut, bootstrap } = useApp();
+  const { profile, access, mode, ownKeys, updateProfile, signOut, bootstrap } = useApp();
   const [draft, setDraft] = useState<CandidateProfile | null>(profile);
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -190,6 +190,37 @@ export default function ProfilePage() {
             </div>
           </Card>
 
+          {mode === "byok" && (
+            <Card>
+              <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+                <KeyRound className="h-4 w-4 text-gold" /> Your keys
+              </h2>
+              <p className="mt-2 text-sm text-mute">Stored only in this browser and used only for your sessions.</p>
+              <dl className="mt-4 space-y-2 font-mono text-[12.5px]">
+                {(
+                  [
+                    ["Anthropic", ownKeys?.anthropic],
+                    ["ElevenLabs", ownKeys?.elevenlabs],
+                    ["Deepgram", ownKeys?.deepgram],
+                  ] as const
+                ).map(([k, v]) => (
+                  <div key={k} className="flex justify-between rounded-xl border hairline px-3 py-2">
+                    <dt className="font-sans text-paper-dim">{k}</dt>
+                    <dd className={v ? "text-paper-dim" : "text-faint"}>{v ? maskKey(v) : "not added"}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="mt-4 grid gap-2">
+                <Button variant="secondary" href="/keys">
+                  Change keys
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirmSignOut(true)}>
+                  <LogOut className="h-4 w-4" /> Remove keys from this device
+                </Button>
+              </div>
+            </Card>
+          )}
+
           {access && (
             <Card>
               <h2 className="text-[15px] font-semibold">This month</h2>
@@ -232,8 +263,12 @@ export default function ProfilePage() {
         </div>
       </Modal>
 
-      <Modal open={confirmSignOut} onClose={() => setConfirmSignOut(false)} title="Forget your invite here?">
-        <p className="-mt-1 text-sm text-mute">You'll need your invite link to get back in. Your saved sessions stay on this device.</p>
+      <Modal open={confirmSignOut} onClose={() => setConfirmSignOut(false)} title={mode === "byok" ? "Remove your keys?" : "Forget your invite here?"}>
+        <p className="-mt-1 text-sm text-mute">
+          {mode === "byok"
+            ? "Your keys will be deleted from this browser. Your saved sessions stay on this device."
+            : "You'll need your invite link to get back in. Your saved sessions stay on this device."}
+        </p>
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmSignOut(false)}>
             Cancel
@@ -245,7 +280,7 @@ export default function ProfilePage() {
               router.replace("/");
             }}
           >
-            Forget invite
+            {mode === "byok" ? "Remove keys" : "Forget invite"}
           </Button>
         </div>
       </Modal>

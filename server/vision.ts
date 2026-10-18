@@ -20,9 +20,9 @@ const SCHEMA = {
  * One qualitative read of a webcam frame. Returns null on any failure so vision
  * never blocks the conversation.
  */
-export async function analyzeFrame(base64Jpeg: string): Promise<{ analysis: VisionAnalysis | null; costUsd: number }> {
+export async function analyzeFrame(apiKey: string, base64Jpeg: string): Promise<{ analysis: VisionAnalysis | null; costUsd: number }> {
   try {
-    const msg = await anthropic().messages.create({
+    const msg = await anthropic(apiKey).messages.create({
       model: MODELS.fast,
       max_tokens: 1500,
       output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },

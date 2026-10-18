@@ -51,6 +51,7 @@ Produce:
 - dayOfChecklist: 6–8 short, practical items for the day of the interview.`;
 
 export interface PrepInput {
+  apiKey: string;
   role: string;
   company?: string;
   jobDescription?: string;
@@ -63,7 +64,7 @@ export async function generatePrepPack(input: PrepInput): Promise<{ pack: PrepPa
   let costUsd = 0;
   let notes = "";
   if (input.research && input.company) {
-    const r = await researchCompany(input.company, input.role);
+    const r = await researchCompany(input.apiKey, input.company, input.role);
     notes = r.notes;
     costUsd += r.costUsd;
   }
@@ -80,6 +81,7 @@ ${input.resumeText?.slice(0, 14000) || "(not provided — keep stories generic w
 ${notes ? `\nCOMPANY RESEARCH NOTES (from a web search just now):\n${notes}` : ""}`;
 
   const { data, costUsd: c } = await structured<PrepPack>({
+    apiKey: input.apiKey,
     model: MODELS.coach,
     system: PREP_SYSTEM,
     user,
@@ -95,7 +97,7 @@ ${notes ? `\nCOMPANY RESEARCH NOTES (from a web search just now):\n${notes}` : "
   return { pack: data, costUsd };
 }
 
-async function researchCompany(company: string, role: string): Promise<{ notes: string; costUsd: number }> {
+async function researchCompany(apiKey: string, company: string, role: string): Promise<{ notes: string; costUsd: number }> {
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     {
       role: "user",
@@ -105,7 +107,7 @@ async function researchCompany(company: string, role: string): Promise<{ notes: 
   let costUsd = 0;
   try {
     for (let i = 0; i < 3; i++) {
-      const msg = await anthropic()
+      const msg = await anthropic(apiKey)
         .beta.messages.stream({
           model: MODELS.research,
           max_tokens: 8000,
@@ -145,8 +147,12 @@ export interface ResumeInsights {
   experienceLevel: "student" | "entry" | "mid" | "senior" | "lead" | "career-change";
 }
 
-export async function analyzeResume(resumeText: string): Promise<{ insights: ResumeInsights | null; costUsd: number }> {
+export async function analyzeResume(
+  apiKey: string,
+  resumeText: string
+): Promise<{ insights: ResumeInsights | null; costUsd: number }> {
   const { data, costUsd } = await structured<ResumeInsights>({
+    apiKey,
     model: MODELS.fast,
     effort: "low",
     maxTokens: 4000,
@@ -168,18 +174,20 @@ export async function analyzeResume(resumeText: string): Promise<{ insights: Res
 /* ───────────────────────────── live coach hint ───────────────────────────── */
 
 export async function coachHint({
+  apiKey,
   question,
   partialAnswer,
   role,
   resumeText,
 }: {
+  apiKey: string;
   question: string;
   partialAnswer: string;
   role: string;
   resumeText?: string;
 }): Promise<{ hint: string; costUsd: number }> {
   try {
-    const msg = await anthropic().messages.create({
+    const msg = await anthropic(apiKey).messages.create({
       model: MODELS.fast,
       max_tokens: 1500,
       output_config: { effort: "low" },

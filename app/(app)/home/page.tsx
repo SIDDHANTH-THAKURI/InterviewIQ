@@ -22,7 +22,7 @@ function greeting() {
 }
 
 export default function Home() {
-  const { profile, access } = useApp();
+  const { profile, access, mode } = useApp();
   const [sessions, setSessions] = useState<SessionRecord[] | null>(null);
   const [preps, setPreps] = useState<PrepRecord[]>([]);
 
@@ -111,7 +111,11 @@ export default function Home() {
         <Stat icon={<Gauge className="h-4 w-4" />} label="Readiness" value={ready ?? "—"} note={ready != null ? "weighted to recent sessions" : "after your first session"} />
         <Stat icon={<AudioLines className="h-4 w-4" />} label="Sessions" value={all.filter((s) => s.status === "complete" || s.status === "unscored").length} note={done.length ? `best ${Math.max(...done.map((s) => s.feedback!.overallScore))}` : "let's begin"} />
         <Stat icon={<Flame className="h-4 w-4" />} label="Streak" value={days} unit={days === 1 ? "day" : "days"} note={days ? "keep it going" : "practice today to start one"} />
-        <Stat icon={<Timer className="h-4 w-4" />} label="Minutes left" value={minutesLeft ?? "∞"} note="this month" />
+        {mode === "byok" ? (
+          <Stat icon={<Timer className="h-4 w-4" />} label="Minutes left" value="∞" note="on your own keys" />
+        ) : (
+          <Stat icon={<Timer className="h-4 w-4" />} label="Minutes left" value={minutesLeft ?? "∞"} note="this month" />
+        )}
       </div>
 
       {sessions && done.length > 0 ? (

@@ -65,10 +65,14 @@ export default function PracticePage() {
 function Practice() {
   const router = useRouter();
   const params = useSearchParams();
-  const { profile, access } = useApp();
+  const { profile, access, mode, ownKeys } = useApp();
+  const canSpeak = mode !== "byok" || !!ownKeys?.deepgram;
+  const canHear = mode !== "byok" || !!ownKeys?.elevenlabs;
 
   const [config, setConfig] = useState<InterviewConfig>({
     ...DEFAULT_CONFIG,
+    inputMode: mode === "byok" && !ownKeys?.deepgram ? "text" : DEFAULT_CONFIG.inputMode,
+    voiceOut: mode === "byok" && !ownKeys?.elevenlabs ? false : DEFAULT_CONFIG.voiceOut,
     language: profile?.preferredLanguage ?? "en",
     difficulty: (profile?.nerves ?? 3) >= 4 ? "gentle" : "standard",
   });
@@ -113,7 +117,11 @@ function Practice() {
     if (again) {
       void getSession(again).then((s) => {
         if (!s) return;
-        setConfig(s.config);
+        setConfig({
+          ...s.config,
+          inputMode: canSpeak ? s.config.inputMode : "text",
+          voiceOut: canHear ? s.config.voiceOut : false,
+        });
         setRole(s.context.role);
         setCompany(s.context.company ?? "");
         setJd(s.context.jobDescription ?? "");
@@ -370,13 +378,25 @@ function Practice() {
             <SectionTitle icon={<Mic className="h-4 w-4" />} title="How you'll answer" />
             <Segmented
               value={config.inputMode}
-              onChange={(v) => set("inputMode", v)}
+              onChange={(v) => (canSpeak || v === "text") && set("inputMode", v)}
               options={[
                 { value: "voice", label: <span className="flex items-center gap-1.5"><Mic className="h-3.5 w-3.5" /> Speak</span> },
                 { value: "text", label: <span className="flex items-center gap-1.5"><Keyboard className="h-3.5 w-3.5" /> Type</span> },
               ]}
             />
-            <Toggle checked={config.voiceOut} onChange={(v) => set("voiceOut", v)} icon={<Volume2 className="h-4 w-4" />} label="Interviewer speaks out loud" description="Off = captions only (quiet places)." />
+            {!canSpeak && (
+              <p className="text-xs text-faint">
+                Speaking needs a Deepgram key — <a href="/keys" className="text-paper-dim underline underline-offset-4">add one</a>.
+              </p>
+            )}
+            <Toggle
+              checked={config.voiceOut}
+              disabled={!canHear}
+              onChange={(v) => set("voiceOut", v)}
+              icon={<Volume2 className="h-4 w-4" />}
+              label="Interviewer speaks out loud"
+              description={canHear ? "Off = captions only (quiet places)." : "Needs an ElevenLabs key — captions only for now."}
+            />
             <Toggle checked={config.camera} onChange={(v) => set("camera", v)} icon={<Camera className="h-4 w-4" />} label="Camera" description="Eye contact & presence feedback. Analysed on your device." />
             <Toggle checked={config.coach} onChange={(v) => set("coach", v)} icon={<Lightbulb className="h-4 w-4" />} label="Private hints" description="Ask your coach for a nudge mid-answer." />
             <label className="flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">

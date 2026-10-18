@@ -22,12 +22,21 @@ export const MODELS = {
 /** Server-side refusal fallback: a declined request is re-run on Anthropic's recommended model. */
 export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
-let client: Anthropic | null = null;
+const clients = new Map<string, Anthropic>();
 
-export function anthropic(): Anthropic {
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
-  if (!client) client = new Anthropic({ maxRetries: 2 });
-  return client;
+/**
+ * A client for exactly the key given. There is deliberately no default: every
+ * caller must say whose key it is spending (see lib/server/keys.ts).
+ */
+export function anthropic(apiKey: string): Anthropic {
+  if (!apiKey) throw new Error("No Anthropic API key for this request");
+  let c = clients.get(apiKey);
+  if (!c) {
+    if (clients.size > 200) clients.clear();
+    c = new Anthropic({ apiKey, maxRetries: 2 });
+    clients.set(apiKey, c);
+  }
+  return c;
 }
 
 export interface StructuredResult<T> {
@@ -40,6 +49,7 @@ export interface StructuredResult<T> {
  * timeouts) and returns the parsed JSON plus its estimated cost.
  */
 export async function structured<T>({
+  apiKey,
   model,
   system,
   user,
@@ -47,6 +57,7 @@ export async function structured<T>({
   effort = "high",
   maxTokens = 32000,
 }: {
+  apiKey: string;
   model: string;
   system: string;
   user: Anthropic.Beta.BetaMessageParam["content"];
@@ -54,7 +65,7 @@ export async function structured<T>({
   effort?: "low" | "medium" | "high" | "xhigh";
   maxTokens?: number;
 }): Promise<StructuredResult<T>> {
-  const stream = anthropic().beta.messages.stream({
+  const stream = anthropic(apiKey).beta.messages.stream({
     model,
     max_tokens: maxTokens,
     betas: [FALLBACK_BETA],

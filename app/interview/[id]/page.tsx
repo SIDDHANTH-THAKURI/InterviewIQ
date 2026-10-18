@@ -26,7 +26,7 @@ import { useMicrophone } from "@/hooks/useMicrophone";
 import { useWebcam } from "@/hooks/useWebcam";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { unlockPlayback } from "@/lib/audioBus";
-import { getPass, realtimeUrl } from "@/lib/client/api";
+import { getOwnKeys, getPass, realtimeUrl } from "@/lib/client/api";
 import { getSession, putSession, type SessionRecord } from "@/lib/client/db";
 import { useApp } from "@/lib/client/store";
 import { cn, formatClock } from "@/lib/cn";
@@ -294,9 +294,10 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
   useEffect(() => {
     if (ws.status !== "open" || startedRef.current || !record) return;
     startedRef.current = true;
+    const pass = getPass();
     ws.sendJSON({
       type: "interview:start",
-      pass: getPass() ?? "",
+      ...(pass ? { pass } : { keys: getOwnKeys() ?? undefined }),
       sessionId: record.id,
       config: record.config,
       context: record.context,
@@ -667,7 +668,17 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
             <AlertTriangle className="h-9 w-9 text-warn" />
             <p className="mt-4 max-w-sm text-center text-[15px] text-paper-dim">{error?.message}</p>
             <div className="mt-8 flex gap-3">
-              {transcriptRef.current.some((t) => t.role === "candidate") && error?.code !== "auth" ? (
+              {error?.code === "keys" ? (
+                <Button
+                  variant="glow"
+                  onClick={() => {
+                    teardown();
+                    router.push("/keys");
+                  }}
+                >
+                  Manage my keys
+                </Button>
+              ) : transcriptRef.current.some((t) => t.role === "candidate") && error?.code !== "auth" ? (
                 <Button
                   variant="glow"
                   onClick={() => {

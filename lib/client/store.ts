@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { AccessInfo, CandidateProfile } from "@/types/interview";
-import { ApiError, clearPass, fetchAccess, getPass } from "./api";
+import { ApiError, accessMode, clearOwnKeys, clearPass, fetchAccess, getOwnKeys, type OwnKeys } from "./api";
 import { getProfile, saveProfile } from "./db";
 
 type Status = "idle" | "loading" | "ready" | "no-pass" | "denied";
@@ -10,7 +10,10 @@ type Status = "idle" | "loading" | "ready" | "no-pass" | "denied";
 interface AppState {
   status: Status;
   deniedReason?: string;
+  /** invite = owner's keys with limits · byok = the visitor's own keys */
+  mode: "invite" | "byok" | null;
   access: AccessInfo | null;
+  ownKeys: OwnKeys | null;
   ownerName: string;
   profile: CandidateProfile | null;
   bootstrap: (force?: boolean) => Promise<void>;
@@ -21,20 +24,28 @@ interface AppState {
 
 export const useApp = create<AppState>((set, get) => ({
   status: "idle",
+  mode: null,
   access: null,
+  ownKeys: null,
   ownerName: "",
   profile: null,
 
   async bootstrap(force = false) {
     if (!force && (get().status === "loading" || get().status === "ready")) return;
-    if (!getPass()) {
-      set({ status: "no-pass" });
+    const mode = accessMode();
+    if (!mode) {
+      set({ status: "no-pass", mode: null });
       return;
     }
-    set({ status: "loading" });
+    set({ status: "loading", mode });
+    if (mode === "byok") {
+      const profile = await getProfile().catch(() => undefined);
+      set({ status: "ready", access: null, ownKeys: getOwnKeys(), profile: profile ?? null });
+      return;
+    }
     try {
       const [{ access, ownerName }, profile] = await Promise.all([fetchAccess(), getProfile()]);
-      set({ status: "ready", access, ownerName, profile: profile ?? null });
+      set({ status: "ready", access, ownerName, ownKeys: null, profile: profile ?? null });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         set({ status: "denied", deniedReason: err.message });
@@ -47,6 +58,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   async refreshAccess() {
+    if (get().mode !== "invite") return;
     try {
       const { access } = await fetchAccess();
       set({ access });
@@ -79,6 +91,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   signOut() {
     clearPass();
-    set({ status: "no-pass", access: null });
+    clearOwnKeys();
+    set({ status: "no-pass", mode: null, access: null, ownKeys: null });
   },
 }));

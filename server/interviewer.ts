@@ -2,7 +2,7 @@
  * One live interview session: listens (Deepgram), thinks (Claude), speaks
  * (ElevenLabs), keeps time, and produces the scored report at the end.
  */
-import type Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import { anthropic, FALLBACK_BETA, MODELS } from "../lib/ai/claude";
 import {
   buildInterviewerPrompt,
@@ -22,6 +22,7 @@ import { generateFeedback } from "../lib/ai/feedback";
 import { coachHint } from "../lib/ai/prep";
 import { claudeCost, sttCost, ttsCost } from "../lib/server/pricing";
 import { recordUsage, remainingMinutes, type Member } from "../lib/server/access";
+import type { ProviderKeys } from "../lib/server/keys";
 import { DeepgramSTT, type STTHandlers } from "./stt";
 import { ElevenLabsTTS, type TTSSession } from "./tts";
 import { analyzeFrame } from "./vision";
@@ -50,7 +51,9 @@ export type Emit = (msg: ServerMessage) => void;
 export type EmitAudio = (buf: Buffer) => void;
 
 export class InterviewSession {
-  private member!: Member;
+  /** null = bring-your-own-keys session (no owner limits, no owner usage). */
+  private member: Member | null = null;
+  private keys!: ProviderKeys;
   private config!: InterviewConfig;
   private context!: InterviewContext;
   private candidateName?: string;
@@ -99,13 +102,14 @@ export class InterviewSession {
 
   /* ─────────────────────────────── lifecycle ──────────────────────────── */
 
-  async start(payload: ClientStartMessage, member: Member) {
+  async start(payload: ClientStartMessage, { member, keys }: { member: Member | null; keys: ProviderKeys }) {
     this.member = member;
+    this.keys = keys;
     this.config = payload.config;
     this.context = payload.context;
     this.candidateName = payload.candidateName?.slice(0, 60);
 
-    const remaining = remainingMinutes(member);
+    const remaining = member ? remainingMinutes(member) : null;
     if (remaining !== null && remaining < 1) {
       this.emit({
         type: "error",
@@ -115,15 +119,20 @@ export class InterviewSession {
       });
       return;
     }
-    const missing = ["ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY", "DEEPGRAM_API_KEY"].filter((k) => !process.env[k]);
-    const needed = missing.filter(
-      (k) =>
-        k === "ANTHROPIC_API_KEY" ||
-        (k === "ELEVENLABS_API_KEY" && this.config.voiceOut) ||
-        (k === "DEEPGRAM_API_KEY" && this.config.inputMode === "voice")
-    );
+    const needed = [
+      !keys.anthropic && "Anthropic",
+      this.config.voiceOut && !keys.elevenlabs && "ElevenLabs",
+      this.config.inputMode === "voice" && !keys.deepgram && "Deepgram",
+    ].filter(Boolean);
     if (needed.length) {
-      this.emit({ type: "error", fatal: true, message: `The server is missing: ${needed.join(", ")}.` });
+      this.emit({
+        type: "error",
+        fatal: true,
+        code: "keys",
+        message: member
+          ? `The server owner hasn't set up: ${needed.join(", ")}.`
+          : `This session needs your ${needed.join(" and ")} key. Add it in Profile → Your keys, or switch to typing / captions.`,
+      });
       return;
     }
 
@@ -141,7 +150,7 @@ export class InterviewSession {
     });
 
     if (this.config.voiceOut) {
-      const key = process.env.ELEVENLABS_API_KEY!;
+      const key = keys.elevenlabs!;
       this.tts = this.interviewers.map((i, n) => new ElevenLabsTTS(key, voiceFor(i.gender, n), this.config.language));
     }
 
@@ -166,7 +175,7 @@ export class InterviewSession {
         onError: (m) => console.warn("[stt]", m),
       };
       const rate = payload.audioSampleRate && payload.audioSampleRate >= 8000 ? Math.round(payload.audioSampleRate) : 48000;
-      this.stt = new DeepgramSTT(process.env.DEEPGRAM_API_KEY!, handlers, rate, this.config.language);
+      this.stt = new DeepgramSTT(keys.deepgram!, handlers, rate, this.config.language);
       this.stt.start();
     }
 
@@ -194,7 +203,7 @@ export class InterviewSession {
   handleVisionFrame(base64: string) {
     if (this.closed || this.analyzing || this.paused || !this.config.camera) return;
     this.analyzing = true;
-    analyzeFrame(base64)
+    analyzeFrame(this.keys.anthropic, base64)
       .then(({ analysis, costUsd }) => {
         this.costUsd += costUsd;
         if (analysis && !this.closed) {
@@ -261,6 +270,7 @@ export class InterviewSession {
         if (!this.config.coach) return;
         this.hintsUsed++;
         const { hint, costUsd } = await coachHint({
+          apiKey: this.keys.anthropic,
           question: this.lastLine,
           partialAnswer: this.finalBuffer,
           role: this.context.role,
@@ -368,7 +378,7 @@ export class InterviewSession {
     let buffer = "";
 
     try {
-      const stream = anthropic().beta.messages.stream({
+      const stream = anthropic(this.keys.anthropic).beta.messages.stream({
         model: MODELS.interviewer,
         max_tokens: 1024,
         betas: [FALLBACK_BETA],
@@ -397,9 +407,20 @@ export class InterviewSession {
       const msg = await stream.finalMessage();
       this.costUsd += claudeCost(msg.model || MODELS.interviewer, msg.usage);
     } catch (err) {
-      console.warn("[interviewer]", (err as Error).message);
       live?.abort();
       this.generating = false;
+      if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
+        this.emit({
+          type: "error",
+          fatal: true,
+          code: "keys",
+          message: this.member
+            ? "The server's Anthropic key was rejected. Let the person who invited you know."
+            : "Your Anthropic key was rejected. Check it in Profile → Your keys.",
+        });
+        return;
+      }
+      console.warn("[interviewer]", (err as Error).message);
       this.emit({ type: "error", message: "The interviewer lost their train of thought. Say something to continue." });
       this.pendingArmSilence = true;
       return;
@@ -550,6 +571,7 @@ export class InterviewSession {
 
     const delivery = computeDelivery(this.transcript, this.hintsUsed);
     const { feedback, costUsd } = await generateFeedback({
+      apiKey: this.keys.anthropic,
       transcript: this.transcript,
       config: this.config,
       context: this.context,

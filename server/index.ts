@@ -14,7 +14,8 @@ import { parse } from "node:url";
 import next from "next";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import { InterviewSession } from "./interviewer";
-import { verifyPass, adminPasscodeConfigured } from "../lib/server/access";
+import { verifyPass, adminPasscodeConfigured, type Member } from "../lib/server/access";
+import { byokEnabled, ownerKeys, visitorKeys, type ProviderKeys } from "../lib/server/keys";
 import { REALTIME_PATH, type ClientMessage } from "../types/interview";
 
 const prod = process.argv.includes("--prod") || process.env.NODE_ENV === "production";
@@ -77,15 +78,30 @@ async function main() {
       }
       if (msg.type === "interview:start") {
         if (started) return;
-        const v = verifyPass(msg.pass);
-        if (!v.ok) {
-          emit({ type: "error", fatal: true, code: "auth", message: "Your invite link is no longer valid." });
+        // Invite → owner's keys. Otherwise → only the visitor's own keys, never the owner's.
+        let member: Member | null = null;
+        let keys: ProviderKeys | null = null;
+        if (msg.pass) {
+          const v = verifyPass(msg.pass);
+          if (!v.ok) {
+            emit({ type: "error", fatal: true, code: "auth", message: "Your invite link is no longer valid." });
+            ws.close(4401, "unauthenticated");
+            return;
+          }
+          member = v.member;
+          keys = ownerKeys();
+        } else if (byokEnabled()) {
+          keys = visitorKeys(msg.keys);
+        }
+        if (!keys) {
+          emit({ type: "error", fatal: true, code: "auth", message: "Open your invite link, or add your own API keys." });
           ws.close(4401, "unauthenticated");
           return;
         }
+        delete msg.keys; // keep keys out of anything the session might log or echo
         started = true;
         clearTimeout(authTimer);
-        session.start(msg, v.member).catch((err) => {
+        session.start(msg, { member, keys }).catch((err) => {
           console.error("[start]", err);
           emit({ type: "error", fatal: true, message: "Couldn't start the interview. Please try again." });
         });
