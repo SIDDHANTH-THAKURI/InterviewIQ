@@ -99,7 +99,7 @@ async function researchCompany(company: string, role: string): Promise<{ notes: 
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     {
       role: "user",
-      content: `Research "${company}" for someone interviewing for a "${role}" role. Find: what the company does and its products, recent news or launches (last 12 months), stated values/culture, interview process tips if public, and anything relevant to this role. Reply with 8–12 concise factual bullet points (plain "- " lines), each with the source domain in parentheses. If the company is ambiguous or unknown, say so in one line.`,
+      content: `Research "${company}" for someone interviewing for a "${role}" role. Find: what the company does and its products, recent news or launches (last 12 months), stated values/culture, interview process tips if public, and anything relevant to this role. Run several focused searches (company overview, recent news, culture/values, interview experiences). Then reply with 8–12 concise factual bullet points (plain "- " lines), each with the source domain in parentheses. Only include facts you found; no commentary about the search itself. If the company is ambiguous or unknown, say so in one line.`,
     },
   ];
   let costUsd = 0;
@@ -111,8 +111,8 @@ async function researchCompany(company: string, role: string): Promise<{ notes: 
           max_tokens: 8000,
           betas: [FALLBACK_BETA],
           fallbacks: "default",
-          output_config: { effort: "low" },
-          tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
+          output_config: { effort: "medium" },
+          tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8 }],
           messages,
         })
         .finalMessage();
