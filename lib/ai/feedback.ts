@@ -13,6 +13,7 @@ import {
   type InterviewContext,
   type InterviewFeedback,
   type PracticeFormat,
+  type PresenceEvent,
   type TranscriptTurn,
   type VisionAnalysis,
 } from "../../types/interview";
@@ -60,6 +61,7 @@ Write "headline" as one punchy sentence. "summary" is 3–4 sentences. Give 2–
 
 export interface FeedbackInput {
   apiKey: string;
+  presence?: PresenceEvent[];
   transcript: TranscriptTurn[];
   config: InterviewConfig;
   context: InterviewContext;
@@ -84,6 +86,8 @@ export async function generateFeedback(input: FeedbackInput): Promise<{ feedback
     ? `Camera metrics (measured on-device every frame): eye contact ${cv.eyeContactPct}% · on-screen ${cv.presentPct}% · blinks ${cv.blinksPerMin}/min (15–20 calm, 30+ nervous) · smiling ${cv.smilePct}% · head steadiness ${cv.headSteadiness}/100 · engagement ${cv.engagement}/100.`
     : "Camera metrics: not available (camera off). Set presence.score to null and say so briefly in presence.summary.";
 
+  const moments = summarizePresence(input.presence ?? []);
+
   const snapshots = vision.length
     ? `Periodic visual impressions: ${vision
         .map((v) => `${v.eyeContact} eye contact, ${v.posture} posture, ${v.expression}${v.notes ? ` (${v.notes})` : ""}`)
@@ -96,6 +100,7 @@ ${context.notes ? `Candidate's focus/notes: ${context.notes}\n` : ""}${context.j
 Delivery (measured): ${delivery.answers} answers, avg ${delivery.avgAnswerWords} words${delivery.wpm ? `, ${delivery.wpm} words/min` : ""}, ${delivery.fillerCount} filler words (${delivery.fillerPer100} per 100 words)${delivery.topFillers.length ? `: ${delivery.topFillers.map((f) => `"${f.word}"×${f.count}`).join(", ")}` : ""}. Hints used: ${delivery.hintsUsed}.
 ${camera}
 ${snapshots}
+${moments}
 
 TRANSCRIPT:
 ${convo}
@@ -111,12 +116,29 @@ For nextSession, pick the single practice format that would help most next, with
       schema: SCHEMA,
       effort: "high",
     });
-    if (data) return { feedback: normalize(data, delivery, cv), costUsd };
+    if (data) return { feedback: { ...normalize(data, delivery, cv), presenceEvents: input.presence?.length ? input.presence : undefined }, costUsd };
     return { feedback: emptyFeedback(config, delivery, cv, true), costUsd };
   } catch (err) {
     console.warn("[feedback]", (err as Error).message);
     return { feedback: emptyFeedback(config, delivery, cv, true), costUsd: 0 };
   }
+}
+
+function summarizePresence(events: PresenceEvent[]): string {
+  if (!events.length) return "";
+  const counts = new Map<string, number>();
+  for (const e of events) if (e.kind !== "returned" && e.kind !== "smiling") counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+  if (!counts.size) return "";
+  const label: Record<string, string> = {
+    absent: "left the frame",
+    hand_raised: "raised a hand",
+    pointing: "pointed off-camera",
+    phone: "used a phone",
+    other_person: "another person appeared",
+    looking_away: "looked away for a long stretch",
+    confused: "looked unsure after a question",
+  };
+  return `On-camera moments (detected on-device): ${[...counts].map(([k, n]) => `${label[k] ?? k} ×${n}`).join(", ")}. Mention only what matters for a real interview, kindly.`;
 }
 
 const clamp = (n: unknown) => {

@@ -57,6 +57,10 @@ export interface InterviewConfig {
   panel: boolean;
   /** Allow the private coach (hints) during the interview. */
   coach: boolean;
+  /** "Real interviewer" mode: reacts to what the camera sees (hand raised, leaving, phone…). */
+  awareness: boolean;
+  /** The interviewer can see a shared screen (code, slides). */
+  screenShare: boolean;
 }
 
 export const DEFAULT_CONFIG: InterviewConfig = {
@@ -68,9 +72,11 @@ export const DEFAULT_CONFIG: InterviewConfig = {
   voiceOut: true,
   camera: true,
   language: "en",
-  avatar: "aura",
+  avatar: "human",
   panel: false,
   coach: true,
+  awareness: false,
+  screenShare: false,
 };
 
 /* ──────────────────────────── Vision analysis ───────────────────────────── */
@@ -89,6 +95,26 @@ export interface VisionAnalysis {
   presentation: Presentation;
   notes: string | null;
   ts?: number;
+}
+
+/** Things a real interviewer would notice on camera, detected on-device. */
+export type PresenceKind =
+  | "absent" // left the frame
+  | "returned" // came back
+  | "hand_raised"
+  | "pointing"
+  | "phone"
+  | "other_person"
+  | "looking_away" // sustained, not a glance
+  | "confused"
+  | "smiling";
+
+export interface PresenceEvent {
+  kind: PresenceKind;
+  /** Seconds since the interview started. */
+  at: number;
+  /** How long it lasted, when known. */
+  durationSec?: number;
 }
 
 /** Real-time metrics computed in-browser by MediaPipe. No images leave the device. */
@@ -193,6 +219,8 @@ export interface InterviewFeedback {
   };
   delivery?: DeliveryStats;
   liveMetrics?: CvMetrics;
+  /** On-camera moments worth knowing about (awareness mode). */
+  presenceEvents?: PresenceEvent[];
 }
 
 /* ─────────────────────────────── Prep packs ─────────────────────────────── */
@@ -283,8 +311,14 @@ export type ClientMessage =
   | ClientStartMessage
   | { type: "vision:frame"; data: string }
   | { type: "playback:complete" }
+  /** The room (incl. the 3D interviewer) is ready — the interviewer may begin. */
+  | { type: "client:ready" }
   | { type: "cv:metrics"; metrics: CvMetrics }
   | { type: "candidate:text"; text: string }
+  | { type: "presence:event"; event: PresenceEvent }
+  /** JPEG (base64, no prefix) of the candidate's shared screen. */
+  | { type: "screen:frame"; data: string }
+  | { type: "screen:stopped" }
   | { type: "control:repeat" }
   | { type: "control:hint" }
   | { type: "control:skip" }
@@ -296,12 +330,18 @@ export interface InterviewerInfo {
   name: string;
   gender: Gender;
   title: string;
+  /** 3D character id (public/avatars/<avatar>.glb). */
+  avatar: string;
 }
 
 export type ServerMessage =
   | { type: "status"; state: "connected" | "starting" | "live" | "paused" | "closing" }
   | { type: "session:ready"; interviewers: InterviewerInfo[]; maxMinutes: number }
   | { type: "avatar:speaking:start"; speaker?: string }
+  /** Character timings for lip sync, in ms from the start of the current utterance. */
+  | { type: "tts:align"; speaker: string; chars: string[]; starts: number[]; durs: number[] }
+  /** The interviewer stopped talking mid-sentence (e.g. the candidate raised a hand). */
+  | { type: "avatar:interrupted" }
   | { type: "avatar:speaking:end" }
   | { type: "interviewer:delta"; text: string }
   | { type: "interviewer:line"; text: string; speaker: string }

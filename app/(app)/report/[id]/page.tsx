@@ -46,6 +46,16 @@ const SIGNAL: Record<HiringSignal, { label: string; tone: "good" | "warn" | "bad
   no: { label: "Not yet", tone: "bad" },
 };
 
+const MOMENT: Record<string, string> = {
+  absent: "Stepped out of frame",
+  hand_raised: "Raised a hand",
+  pointing: "Pointed off-camera",
+  phone: "Phone in view",
+  other_person: "Someone else in the room",
+  looking_away: "Looked away for a while",
+  confused: "Looked unsure after a question",
+};
+
 const QUALITY: Record<AnswerQuality, { label: string; tone: "good" | "warn" | "bad" | "neutral"; icon: typeof CheckCircle2 }> = {
   strong: { label: "Strong", tone: "good", icon: CheckCircle2 },
   solid: { label: "Solid", tone: "neutral", icon: ThumbsUp },
@@ -245,6 +255,19 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
               </div>
             ) : null}
             <p className="mt-3 text-[13.5px] leading-relaxed text-mute">{fb.presence.summary || "Camera was off for this session."}</p>
+            {fb.presenceEvents?.some((e) => e.kind !== "smiling" && e.kind !== "returned") && (
+              <ul className="mt-4 space-y-1.5 border-t hairline pt-3">
+                {fb.presenceEvents
+                  .filter((e) => e.kind !== "smiling" && e.kind !== "returned")
+                  .slice(0, 8)
+                  .map((e, i) => (
+                    <li key={i} className="flex items-center justify-between text-[13px]">
+                      <span className="text-paper-dim">{MOMENT[e.kind] ?? e.kind}</span>
+                      <span className="font-mono text-xs text-faint">{formatClock(e.at)}</span>
+                    </li>
+                  ))}
+              </ul>
+            )}
           </div>
         </Card>
       </div>

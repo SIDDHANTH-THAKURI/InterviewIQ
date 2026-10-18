@@ -44,3 +44,6 @@ next-env.d.ts
 
 # access registry + generated secret (never commit)
 /.data/
+
+# avatar evaluation files (large, not shipped)
+/public/avatars-lab/

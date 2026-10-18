@@ -29,6 +29,7 @@ import { analyzeFrame } from "./vision";
 import type {
   ClientStartMessage,
   CvMetrics,
+  PresenceEvent,
   InterviewConfig,
   InterviewContext,
   InterviewerInfo,
@@ -87,6 +88,16 @@ export class InterviewSession {
   private consecutiveSilent = 0;
   private exchanges = 0;
   private hintsUsed = 0;
+
+  // Awareness ("real interviewer") + screen share
+  private presence: PresenceEvent[] = [];
+  private lastReaction: Record<string, number> = {};
+  private pendingNotes: string[] = [];
+  private interruptWith: { line: string; note: string } | null = null;
+  private liveTts = new Set<TTSSession>();
+  private screen: { data: string; fresh: boolean } | null = null;
+  private clientReady: (() => void) | null = null;
+  private readySignalled = false;
 
   private activeMs = 0;
   private maxMs = 0;
@@ -184,6 +195,15 @@ export class InterviewSession {
     this.startClock();
 
     this.history.push({ role: "user", content: OPENING_NOTE, synthetic: true });
+    // Let the room finish loading (the 3D interviewer) before saying hello — at most 10 s.
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, 10_000);
+      this.clientReady = () => {
+        clearTimeout(t);
+        resolve();
+      };
+      if (this.readySignalled) this.clientReady();
+    });
     await this.runTurn();
   }
 
@@ -218,6 +238,11 @@ export class InterviewSession {
 
   handleCvMetrics(metrics: CvMetrics) {
     if (!this.closed) this.cv = metrics;
+  }
+
+  handleClientReady() {
+    this.readySignalled = true;
+    this.clientReady?.();
   }
 
   handlePlaybackComplete() {
@@ -301,6 +326,143 @@ export class InterviewSession {
     this.stt = null;
   }
 
+  /* ───────────────────── awareness: what the camera sees ───────────────── */
+
+  /**
+   * The browser reports moments a real interviewer would notice. Every event is
+   * kept for the report; with awareness on, some earn a short in-character
+   * reaction. Brief, harmless things never interrupt.
+   */
+  handlePresence(e: PresenceEvent) {
+    if (this.closed || this.finished || this.paused) return;
+    this.presence.push(e);
+    if (this.presence.length > 300) this.presence.shift();
+    if (!this.config.awareness) return;
+
+    const lead = this.interviewers[0]?.name ?? "the interviewer";
+    const waiting = this.awaitingAnswer && !this.candidateSpoke && !this.generating;
+    const cooled = (kind: string, ms: number) => Date.now() - (this.lastReaction[kind] ?? 0) > ms;
+    const mark = (kind: string) => (this.lastReaction[kind] = Date.now());
+
+    switch (e.kind) {
+      case "hand_raised": {
+        if (!cooled("hand", 20_000) || this.candidateSpoke) return;
+        mark("hand");
+        const line = pick(["Yes — go ahead.", "Sure, go ahead.", "Yes? Please, go ahead."]);
+        const note = "You noticed the candidate raise their hand, stopped and invited them to speak.";
+        if (this.generating) {
+          this.interruptWith = { line, note };
+          this.abortSpeech();
+        } else {
+          void this.react(line, note);
+        }
+        return;
+      }
+      case "absent":
+        if (!waiting || !cooled("absent", 60_000)) return;
+        mark("absent");
+        void this.react(
+          pick(["I can't see you anymore — are you still there?", "Looks like you stepped away. Take your time, I'll wait."]),
+          "The candidate left the camera frame, so you checked in."
+        );
+        return;
+      case "returned":
+        if (Date.now() - (this.lastReaction["absent"] ?? 0) < 120_000) {
+          this.pendingNotes.push("The candidate has come back into the frame after stepping away.");
+        }
+        return;
+      case "phone":
+        if (!cooled("phone", 150_000)) return;
+        mark("phone");
+        if (waiting) {
+          void this.react(
+            "I noticed your phone there — is everything alright? We can pause for a moment if you need to.",
+            "You noticed the candidate looking at their phone and kindly checked in."
+          );
+        } else {
+          this.pendingNotes.push("The candidate was looking at a phone during their answer. Mention it lightly and professionally, once.");
+        }
+        return;
+      case "other_person":
+        if (!cooled("other", 240_000)) return;
+        mark("other");
+        if (waiting) {
+          void this.react(
+            "It looks like someone else is there with you. For the interview it should just be you, if that's possible.",
+            "You noticed another person in the candidate's frame and politely mentioned it."
+          );
+        } else {
+          this.pendingNotes.push("Another person appeared in the candidate's camera frame. Mention politely that the interview should be one-on-one.");
+        }
+        return;
+      case "pointing":
+        if (!cooled("point", 90_000)) return;
+        mark("point");
+        if (waiting) {
+          void this.react(
+            "I can only see you on my side — walk me through what you're pointing at.",
+            "The candidate pointed at something off-camera; you asked them to describe it."
+          );
+        }
+        return;
+      case "confused":
+        if (!waiting || !cooled("confused", 90_000)) return;
+        mark("confused");
+        void this.react(pick(["Would it help if I rephrase that?", "Let me put that another way, if it helps."]), "The candidate looked unsure after your question, so you offered to rephrase.", true);
+        return;
+      case "looking_away":
+        // Thinking while looking away is normal — only note it, never interrupt.
+        if (cooled("away", 120_000)) {
+          mark("away");
+          this.pendingNotes.push(`(${lead}'s private observation: the candidate kept looking away from the camera for a while. Don't comment on it unless it continues.)`);
+        }
+        return;
+      default:
+        return;
+    }
+  }
+
+  handleScreenFrame(data: string) {
+    if (this.closed || !this.config.screenShare) return;
+    if (data.length > 2_500_000) return;
+    const first = !this.screen;
+    this.screen = { data, fresh: true };
+    if (first) this.pendingNotes.push("The candidate has started sharing their screen with you.");
+  }
+
+  handleScreenStopped() {
+    if (!this.screen) return;
+    this.screen = null;
+    this.pendingNotes.push("The candidate stopped sharing their screen.");
+  }
+
+  /** Stop the interviewer mid-sentence. */
+  private abortSpeech() {
+    for (const t of this.liveTts) t.abort();
+    this.liveTts.clear();
+    this.emit({ type: "avatar:interrupted" });
+  }
+
+  private async reactAfterInterrupt() {
+    const r = this.interruptWith!;
+    this.interruptWith = null;
+    this.generating = false;
+    await this.react(r.line, r.note);
+  }
+
+  /** A short, scripted reaction — instant, no model call — recorded so the interviewer remembers it. */
+  private async react(line: string, note: string, rephraseNext = false) {
+    if (this.closed || this.generating) return;
+    this.generating = true;
+    this.stopAwaiting();
+    this.history.push({ role: "user", content: `[${note}]`, synthetic: true });
+    this.history.push({ role: "assistant", content: line });
+    await this.speak(line, this.interviewers[0].name, true);
+    this.generating = false;
+    if (rephraseNext) this.pendingNotes.push("If they say yes, rephrase your last question more simply.");
+    this.afterSpeech();
+  }
+
   /* ─────────────────────────────── clock ──────────────────────────────── */
 
   private startClock() {
@@ -335,7 +497,9 @@ export class InterviewSession {
     this.stopAwaiting();
     this.consecutiveSilent = 0;
     this.exchanges++;
-    this.history.push({ role: "user", content: answer });
+    const notes = this.pendingNotes.splice(0).map((n) => `[${n}]`).join(" ");
+    this.history.push({ role: "user", content: notes ? `${notes}
+${answer}` : answer });
     this.transcript.push({
       role: "candidate",
       text: answer,
@@ -360,7 +524,24 @@ export class InterviewSession {
   }
 
   private messages(): Anthropic.Beta.BetaMessageParam[] {
-    return this.history.map((m) => ({ role: m.role, content: m.content }));
+    const msgs: Anthropic.Beta.BetaMessageParam[] = this.history.map((m) => ({ role: m.role, content: m.content }));
+    // Show the interviewer the candidate's latest screen, once per change, on the newest user turn.
+    if (this.screen?.fresh) {
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role !== "user") continue;
+        msgs[i] = {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: this.screen.data } },
+            { type: "text", text: `[Their shared screen right now is attached above.]
+${msgs[i].content as string}` },
+          ],
+        };
+        break;
+      }
+      this.screen.fresh = false;
+    }
+    return msgs;
   }
 
   /** One interviewer turn: stream Claude → (TTS) → client. */
@@ -435,15 +616,18 @@ export class InterviewSession {
       if (tail) live.sendText(tail + " ");
       live.endInput();
       await live.done;
+      this.liveTts.delete(live);
       this.ttsChars += live.chars;
       if (spoken) this.commitLine(spoken, lead.name);
       this.emit({ type: "avatar:speaking:end" });
+      if (this.interruptWith) return this.reactAfterInterrupt();
     } else if (panel) {
       const segments = parsePanelSegments(spoken, this.interviewers.map((i) => i.name));
       for (let i = 0; i < segments.length; i++) {
         if (this.closed) break;
         const seg = segments[i];
         await this.speak(seg.text, seg.name, true);
+        if (this.interruptWith) return this.reactAfterInterrupt();
         if (i < segments.length - 1 && this.config.voiceOut && !this.closed) await this.waitForPlayback();
       }
     } else if (spoken) {
@@ -466,6 +650,7 @@ export class InterviewSession {
       tts.sendText(text + " ");
       tts.endInput();
       await tts.done;
+      this.liveTts.delete(tts);
       this.ttsChars += tts.chars;
       this.emit({ type: "avatar:speaking:end" });
     }
@@ -475,11 +660,14 @@ export class InterviewSession {
 
   private openTts(index: number, speaker: string): TTSSession {
     const engine = this.tts[index] ?? this.tts[0];
-    return engine.createSession({
+    const session = engine.createSession({
       onStart: () => this.emit({ type: "avatar:speaking:start", speaker }),
+      onAlignment: (a) => this.emit({ type: "tts:align", speaker, ...a }),
       onAudio: (buf) => this.emitAudio(buf),
       onError: (m) => console.warn("[tts]", m),
     });
+    this.liveTts.add(session);
+    return session;
   }
 
   private commitLine(text: string, speaker: string) {
@@ -577,6 +765,7 @@ export class InterviewSession {
       context: this.context,
       vision: this.vision,
       cv: this.config.camera ? this.cv : null,
+      presence: this.presence,
       delivery,
       candidateName: this.candidateName,
     });
@@ -601,6 +790,10 @@ export class InterviewSession {
 }
 
 /* ─────────────────────────── text helpers ───────────────────────────────── */
+
+function pick<T>(xs: T[]): T {
+  return xs[Math.floor(Math.random() * xs.length)];
+}
 
 function stripToken(s: string): string {
   return s.split(COMPLETE_TOKEN).join("").replace(/\[INTERVIEW_COMPLETE\]?$/, "");

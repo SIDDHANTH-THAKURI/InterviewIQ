@@ -121,8 +121,20 @@ async function main() {
         case "playback:complete":
           session.handlePlaybackComplete();
           break;
+        case "client:ready":
+          session.handleClientReady();
+          break;
         case "candidate:text":
           session.handleText(msg.text);
+          break;
+        case "presence:event":
+          session.handlePresence(msg.event);
+          break;
+        case "screen:frame":
+          session.handleScreenFrame(msg.data);
+          break;
+        case "screen:stopped":
+          session.handleScreenStopped();
           break;
         case "control:repeat":
         case "control:hint":

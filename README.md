@@ -21,6 +21,9 @@ Either way, everything they practice stays in their own browser.
 | **Honest reports** | Overall score and grade, five skill scores, a hiring signal, what worked, three things to fix (each with a drill), and a **stronger rewrite of every answer** in the candidate's own words. Measured delivery stats: pace, filler words, answer length. Optional on-device camera metrics. |
 | **Prep packs** | Paste a job post → likely questions with answer outlines, a STAR story bank built from the resume, concerns to get ahead of, questions to ask back, a day-of checklist, and optional live company research. |
 | **Progress** | Readiness score, trend chart, skill averages, streaks, and a recommended next session. |
+| **Realistic interviewers** | Six diverse 3D interviewers in suits, in a softly blurred office. Lips are synced to the actual words using ElevenLabs character timings; they hold eye contact, nod while you talk, glance away to think, and smile back. Or pick the abstract Aura orb. |
+| **Real interviewer mode** *(toggle, off by default)* | On-device camera awareness: a raised hand, stepping out of frame, a phone, someone else in the room, long look-aways or a confused face. Sensible hold times and cooldowns mean quick glances never count; reactions are short and in character, and moments appear in the report. |
+| **Screen sharing** *(toggle, off by default)* | Share your screen and the interviewer sees it whenever it changes — ask about your code, slides or designs like a real panel would. |
 | **Languages** | English, English + Hinglish/mixed, Hindi, Spanish, French, German, Portuguese. |
 | **Invites + own keys** | An owner console to create links, set monthly minute/prep limits, pause or rotate links, and see usage and estimated cost per person — plus a "use my own keys" page with live key testing for everyone else. |
 
@@ -136,6 +139,10 @@ npm run invite -- "Aarav" --minutes 120 --preps 10 --url https://your-app.exampl
 
 - `/realtime` is authenticated with the member's signed pass; the server enforces monthly minutes, a hard time cap per session, and records usage + estimated cost.
 - If a session drops, the transcript so far is kept and can be scored later from the report page.
+
+### Characters
+
+`public/avatars/*.glb` are generated with Blender + MPFB (MakeHuman, CC0 assets) and rigged for [TalkingHead](https://github.com/met4citizen/TalkingHead) — see `public/avatars/CREDITS.txt` and `scripts/avatars/build_cast.py` to regenerate or add people.
 
 ### Project layout
 

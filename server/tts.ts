@@ -4,6 +4,8 @@ import { TTS_SAMPLE_RATE } from "../types/interview";
 export interface TTSHandlers {
   /** Raw PCM (16-bit LE @ 24 kHz) audio chunk. */
   onAudio: (buf: Buffer) => void;
+  /** Character timings (ms from the start of this utterance), sent just before the audio they belong to. */
+  onAlignment?: (a: { chars: string[]; starts: number[]; durs: number[] }) => void;
   /** Fired once when the first audio chunk arrives. */
   onStart?: () => void;
   onEnd?: () => void;
@@ -36,7 +38,7 @@ export class TTSSession {
 
     const url =
       `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input` +
-      `?model_id=${process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5"}&output_format=pcm_${TTS_SAMPLE_RATE}` +
+      `?model_id=${process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5"}&output_format=pcm_${TTS_SAMPLE_RATE}&sync_alignment=true` +
       (language && language !== "en" && language !== "multi" ? `&language_code=${language}` : "");
     this.ws = new WebSocket(url, { headers: { "xi-api-key": apiKey } });
 
@@ -65,6 +67,10 @@ export class TTSSession {
           if (!this.startedAudio) {
             this.startedAudio = true;
             handlers.onStart?.();
+          }
+          const al = msg.alignment;
+          if (al?.chars?.length && handlers.onAlignment) {
+            handlers.onAlignment({ chars: al.chars, starts: al.charStartTimesMs, durs: al.charDurationsMs });
           }
           handlers.onAudio(buf);
         }

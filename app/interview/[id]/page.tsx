@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   Keyboard,
   Lightbulb,
+  MonitorUp,
+  MonitorX,
   Mic,
   MicOff,
   Pause,
@@ -19,7 +21,9 @@ import {
   X,
 } from "lucide-react";
 import { AuraOrb, type AuraMood } from "@/components/aura/AuraOrb";
+import type { HumanStageHandle } from "@/components/avatar/HumanStage";
 import { Lobby } from "@/components/room/Lobby";
+import { pickInterviewers } from "@/lib/ai/interviewer";
 import { Button, FullScreenLoader, Modal } from "@/components/ui/kit";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useMicrophone } from "@/hooks/useMicrophone";
@@ -34,11 +38,12 @@ import {
   CV_METRICS_INTERVAL_MS,
   VISION_INTERVAL_MS,
   type InterviewerInfo,
+  type PresenceEvent,
   type ServerMessage,
   type TranscriptTurn,
 } from "@/types/interview";
 
-const AvatarCanvas = dynamic(() => import("@/components/avatar/AvatarCanvas").then((m) => m.AvatarCanvas), {
+const HumanStage = dynamic(() => import("@/components/avatar/HumanStage").then((m) => m.HumanStage), {
   ssr: false,
   loading: () => <div className="h-full w-full" />,
 });
@@ -91,11 +96,27 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
   const startedRef = useRef(false);
   const transcriptRef = useRef<TranscriptTurn[]>([]);
   const hintsRef = useRef(0);
-  const trackerRef = useRef<import("@/lib/visionTracker").VisionTracker | null>(null);
+  const trackerRef = useRef<import("@/lib/presence").PresenceWatcher | null>(null);
+  const humanRef = useRef<HumanStageHandle | null>(null);
+  /** Which output plays the current utterance: the 3D interviewer (lip-synced) or the plain player. */
+  const routeRef = useRef<"human" | "player">("player");
+  const presenceRef = useRef<PresenceEvent[]>([]);
+  const screenRef = useRef<{ stream: MediaStream; timer: number; last: string } | null>(null);
+  const [humanFailed, setHumanFailed] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
   const captionsEnd = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => void bootstrap(), [bootstrap]);
+
+  /* ── preload the interviewer's 3D character while you're in the waiting room ── */
+  useEffect(() => {
+    if (!record || record.config.avatar !== "human") return;
+    for (const iv of pickInterviewers(record.id, record.config)) {
+      void fetch(`/avatars/${iv.avatar}.glb`, { priority: "high" } as RequestInit).catch(() => {});
+    }
+  }, [record]);
 
   /* ── load the prepared session ── */
   useEffect(() => {
@@ -125,6 +146,7 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
       switch (msg.type) {
         case "session:ready":
           setInterviewers(msg.interviewers);
+          if (record?.config.avatar !== "human") ws.sendJSON({ type: "client:ready" });
           save({ interviewers: msg.interviewers, status: "live" });
           break;
         case "status":
@@ -140,13 +162,26 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
           player.stopCue();
           setMood("speaking");
           if (msg.speaker) setActiveSpeaker(msg.speaker);
+          routeRef.current = humanRef.current?.ready() ? "human" : "player";
+          if (routeRef.current === "human") humanRef.current!.begin(msg.speaker ?? "");
+          break;
+        case "tts:align":
+          if (routeRef.current === "human") humanRef.current?.align(msg.speaker, msg.chars, msg.starts, msg.durs);
+          break;
+        case "avatar:interrupted":
+          humanRef.current?.interrupt();
+          player.reset();
           break;
         case "avatar:speaking:end": {
+          if (routeRef.current === "human" && humanRef.current) {
+            // HumanStage calls onUtteranceDone when the audio has actually finished playing.
+            humanRef.current.end();
+            break;
+          }
           // Audio is still buffered in the browser — wait for it to finish playing.
           const poll = () => {
             if (player.isSpeaking()) return void setTimeout(poll, 100);
-            setMood((m) => (m === "speaking" ? "listening" : m));
-            ws.sendJSON({ type: "playback:complete" });
+            onUtteranceDone();
           };
           setTimeout(poll, 100);
           break;
@@ -173,6 +208,7 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
           setPending((p) => (p ? p + " " : "") + msg.text);
           break;
         case "candidate:committed":
+          if (Math.random() < 0.6) humanRef.current?.react("nod");
           setPending("");
           setInterim("");
           setCaptions((c) => [...c, { role: "candidate", text: msg.text }]);
@@ -229,7 +265,7 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
   const ws = useWebSocket({
     url: typeof window === "undefined" ? "" : realtimeUrl(),
     onMessage,
-    onBinary: (buf) => player.enqueue(buf),
+    onBinary: (buf) => (routeRef.current === "human" && humanRef.current ? humanRef.current.audio(buf) : player.enqueue(buf)),
     onClose: () => {
       if (!endedRef.current && startedRef.current) {
         setError({ message: "The connection dropped. Your transcript so far is saved." });
@@ -238,11 +274,73 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
     },
   });
 
+  /** The interviewer's voice has actually finished playing on this device. */
+  const onUtteranceDone = () => {
+    setMood((m) => (m === "speaking" ? "listening" : m));
+    ws.sendJSON({ type: "playback:complete" });
+  };
+
+  /* ── screen share (optional): the interviewer sees your screen when it changes ── */
+  const stopShare = useCallback(
+    (notify = true) => {
+      const sh = screenRef.current;
+      if (!sh) return;
+      clearInterval(sh.timer);
+      sh.stream.getTracks().forEach((t) => t.stop());
+      screenRef.current = null;
+      setSharing(false);
+      if (notify) ws.sendJSON({ type: "screen:stopped" });
+    },
+    [ws]
+  );
+
+  const startShare = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      const canvas = document.createElement("canvas");
+      const tiny = document.createElement("canvas");
+      tiny.width = 32;
+      tiny.height = 18;
+      const send = () => {
+        if (pausedRef.current || !video.videoWidth) return;
+        // Only send when the screen actually changed (cheap 32×18 fingerprint).
+        const tctx = tiny.getContext("2d")!;
+        tctx.drawImage(video, 0, 0, 32, 18);
+        const px = tctx.getImageData(0, 0, 32, 18).data;
+        let sig = "";
+        for (let i = 0; i < px.length; i += 16) sig += String.fromCharCode(48 + (((px[i] + px[i + 1] + px[i + 2]) / 3) >> 4));
+        const sh = screenRef.current;
+        if (!sh || sig === sh.last) return;
+        let diff = 0;
+        for (let i = 0; i < sig.length; i++) if (sig[i] !== sh.last[i]) diff++;
+        if (sh.last && diff < 4) return;
+        sh.last = sig;
+        const scale = Math.min(1, 1440 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const url = canvas.toDataURL("image/jpeg", 0.65);
+        setLastSeen(url);
+        ws.sendJSON({ type: "screen:frame", data: url.slice(url.indexOf(",") + 1) });
+      };
+      screenRef.current = { stream, timer: window.setInterval(send, 3000), last: "" };
+      stream.getVideoTracks()[0].addEventListener("ended", () => stopShare());
+      setSharing(true);
+      setTimeout(send, 500);
+    } catch {
+      /* user cancelled the picker */
+    }
+  }, [ws, stopShare]);
+
   const mic = useMicrophone({
     onPcm: useCallback(
       (chunk: ArrayBuffer) => {
         // Never stream while the interviewer is audible, paused, or muted.
-        if (pausedRef.current || mutedRef.current || player.isSpeaking()) return;
+        if (pausedRef.current || mutedRef.current || player.isSpeaking() || humanRef.current?.isSpeaking()) return;
         ws.sendBinary(chunk);
       },
       [ws, player]
@@ -271,12 +369,14 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
     timers.current = [];
     trackerRef.current?.stop();
     trackerRef.current = null;
+    humanRef.current?.interrupt();
+    stopShare(false);
     mic.stop();
     webcam.stop();
     player.stopCue();
     player.reset();
     ws.disconnect();
-  }, [mic, webcam, player, ws]);
+  }, [mic, webcam, player, ws, stopShare]);
 
   useEffect(() => () => teardown(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -320,11 +420,26 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
       );
       void (async () => {
         try {
-          const { VisionTracker } = await import("@/lib/visionTracker");
-          const tracker = new VisionTracker();
-          if ((await tracker.init()) && webcam.videoRef.current) {
-            trackerRef.current = tracker;
-            tracker.start(webcam.videoRef.current);
+          const { PresenceWatcher } = await import("@/lib/presence");
+          let lastMirror = 0;
+          const watcher = new PresenceWatcher({
+            events: record.config.awareness,
+            onEvent: (e) => {
+              presenceRef.current.push(e);
+              if (e.kind === "smiling") {
+                // A warm interviewer smiles back now and then (non-verbal, never interrupts).
+                if (record.config.persona !== "silent" && record.config.persona !== "tough" && Date.now() - lastMirror > 20000) {
+                  lastMirror = Date.now();
+                  humanRef.current?.react("smile");
+                }
+                return;
+              }
+              ws.sendJSON({ type: "presence:event", event: e });
+            },
+          });
+          if ((await watcher.init()) && webcam.videoRef.current) {
+            trackerRef.current = watcher;
+            watcher.start(webcam.videoRef.current);
           }
         } catch {
           /* optional */
@@ -338,8 +453,10 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
     const next = !pausedRef.current;
     pausedRef.current = next;
     ws.sendJSON({ type: next ? "control:pause" : "control:resume" });
+    trackerRef.current?.setPaused(next);
     if (next) {
       player.reset();
+      humanRef.current?.interrupt();
       setPhase("paused");
     } else setPhase("live");
   };
@@ -414,6 +531,7 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
   const { config } = record;
   const lead = interviewers[0];
   const planned = config.duration * 60;
+  const useHuman = config.avatar === "human" && !humanFailed && interviewers.length > 0;
   const getLevel = () =>
     mood === "speaking" ? player.getAmplitude() : mood === "listening" ? micLevel.current * 0.55 : 0.05;
 
@@ -451,30 +569,61 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
       <div className="relative z-10 grid min-h-0 flex-1 grid-rows-[1fr_auto] gap-4 px-4 pb-4 sm:px-8 lg:grid-cols-[1.4fr_1fr] lg:grid-rows-1">
         {/* stage */}
         <section className="relative min-h-[300px] overflow-hidden rounded-xl3 border hairline bg-ink-900/60">
+          {useHuman ? (
+            <>
+              <HumanStage
+                ref={humanRef}
+                interviewers={interviewers}
+                activeSpeaker={activeSpeaker || interviewers[0].name}
+                mood={mood}
+                persona={config.persona}
+                language={config.language}
+                getMicLevel={() => micLevel.current}
+                onDone={onUtteranceDone}
+                onFallbackAudio={(b) => player.enqueue(b)}
+                onFallbackEnd={() => {
+                  const poll = () => (player.isSpeaking() ? void setTimeout(poll, 100) : onUtteranceDone());
+                  setTimeout(poll, 100);
+                }}
+                onReady={() => ws.sendJSON({ type: "client:ready" })}
+                onError={(m) => {
+                  ws.sendJSON({ type: "client:ready" });
+                  setHumanFailed(true);
+                  setError({ message: m });
+                  setTimeout(() => setError(null), 5000);
+                }}
+                className="absolute inset-0"
+              />
+              <div className="pointer-events-none absolute inset-0 flex">
+                {interviewers.map((iv) => {
+                  const isActive = interviewers.length === 1 || activeSpeaker === iv.name;
+                  return (
+                    <div key={iv.name} className="relative flex-1">
+                      <div className="absolute left-5 top-5">
+                        <p className={cn("text-[11px] font-medium uppercase tracking-[0.18em] transition-colors", isActive && mood === "speaking" ? "text-ember-soft" : "text-paper-dim/70")}>
+                          {isActive && mood === "speaking" ? "Speaking" : iv.title}
+                        </p>
+                        <p className="mt-0.5 text-lg font-semibold tracking-tight drop-shadow">{iv.name}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
           <div className={cn("absolute inset-0 flex", interviewers.length > 1 ? "divide-x divide-white/5" : "")}>
             {(interviewers.length ? interviewers : [null]).map((iv, idx) => {
               const isActive = !iv || interviewers.length === 1 || activeSpeaker === iv.name;
               const slotMood: AuraMood = isActive ? mood : mood === "thinking" ? "thinking" : "idle";
               return (
                 <div key={iv?.name ?? idx} className="relative flex-1">
-                  {config.avatar === "human" && iv ? (
-                    <AvatarCanvas
-                      state={slotMood}
-                      variant={iv.gender}
-                      getAmplitude={isActive ? player.getAmplitude : ZERO}
-                      getMouthShape={isActive ? player.getMouthShape : ZERO_MOUTH}
-                      personality={config.persona === "warm" ? "friendly" : config.persona}
-                      className="absolute inset-0 h-full w-full"
-                    />
-                  ) : (
-                    <AuraOrb
-                      mood={slotMood}
-                      getLevel={isActive ? getLevel : LOW}
-                      energy={slotMood === "thinking" ? 0.8 : 0.35}
-                      scale={interviewers.length > 1 ? 0.8 : 1.05}
-                      className={cn("absolute inset-0 h-full w-full transition-opacity duration-700", !isActive && "opacity-55")}
-                    />
-                  )}
+                  <AuraOrb
+                    mood={slotMood}
+                    getLevel={isActive ? getLevel : LOW}
+                    energy={slotMood === "thinking" ? 0.8 : 0.35}
+                    scale={interviewers.length > 1 ? 0.8 : 1.05}
+                    className={cn("absolute inset-0 h-full w-full transition-opacity duration-700", !isActive && "opacity-55")}
+                  />
                   {iv && (
                     <div className="absolute left-5 top-5">
                       <p className={cn("text-[11px] font-medium uppercase tracking-[0.18em] transition-colors", isActive && mood === "speaking" ? "text-ember-soft" : "text-faint")}>
@@ -487,11 +636,23 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
               );
             })}
           </div>
+          )}
 
           {/* state chip */}
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2">
             <StateChip phase={phase} mood={mood} />
           </div>
+
+          {/* what the interviewer currently sees of your screen */}
+          {sharing && lastSeen && (
+            <div className="absolute left-5 bottom-5 w-40 overflow-hidden rounded-xl border border-tide/30 bg-ink-900/80 shadow-2xl sm:w-56">
+              <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-tide">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-tide" /> Interviewer can see your screen
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={lastSeen} alt="Your shared screen" className="w-full" />
+            </div>
+          )}
 
           {/* camera PiP */}
           {config.camera && (
@@ -620,6 +781,11 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
           <DockButton label="Skip" onClick={() => ws.sendJSON({ type: "control:skip" })} disabled={phase !== "live"}>
             <SkipForward className="h-[18px] w-[18px]" />
           </DockButton>
+          {config.screenShare && (
+            <DockButton label={sharing ? "Stop sharing" : "Share screen"} onClick={() => (sharing ? stopShare() : void startShare())} active={sharing} disabled={phase !== "live" && phase !== "paused"}>
+              {sharing ? <MonitorX className="h-[18px] w-[18px]" /> : <MonitorUp className="h-[18px] w-[18px]" />}
+            </DockButton>
+          )}
           <span className="mx-1 h-7 w-px bg-white/10" />
           <button
             onClick={() => setConfirmEnd(true)}
@@ -735,9 +901,7 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
   );
 }
 
-const ZERO = () => 0;
 const LOW = () => 0.03;
-const ZERO_MOUTH = () => ({ open: 0, wide: 0 });
 
 function StateChip({ phase, mood }: { phase: Phase; mood: AuraMood }) {
   const label =

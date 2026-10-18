@@ -10,6 +10,8 @@ import {
   Brain,
   Camera,
   ChevronDown,
+  Eye,
+  MonitorUp,
   FileText,
   HandHeart,
   Keyboard,
@@ -118,6 +120,7 @@ function Practice() {
       void getSession(again).then((s) => {
         if (!s) return;
         setConfig({
+          ...DEFAULT_CONFIG,
           ...s.config,
           inputMode: canSpeak ? s.config.inputMode : "text",
           voiceOut: canHear ? s.config.voiceOut : false,
@@ -366,8 +369,8 @@ function Practice() {
                 value={config.avatar}
                 onChange={(v) => set("avatar", v)}
                 options={[
-                  { value: "aura", label: "Aura" },
-                  { value: "human", label: "3D human" },
+                  { value: "human", label: "Realistic person" },
+                  { value: "aura", label: "Aura orb" },
                 ]}
               />
             </Field>
@@ -397,8 +400,27 @@ function Practice() {
               label="Interviewer speaks out loud"
               description={canHear ? "Off = captions only (quiet places)." : "Needs an ElevenLabs key — captions only for now."}
             />
-            <Toggle checked={config.camera} onChange={(v) => set("camera", v)} icon={<Camera className="h-4 w-4" />} label="Camera" description="Eye contact & presence feedback. Analysed on your device." />
+            <Toggle checked={config.camera} onChange={(v) => setConfig((c) => ({ ...c, camera: v, awareness: v ? c.awareness : false }))} icon={<Camera className="h-4 w-4" />} label="Camera" description="Eye contact & presence feedback. Analysed on your device." />
             <Toggle checked={config.coach} onChange={(v) => set("coach", v)} icon={<Lightbulb className="h-4 w-4" />} label="Private hints" description="Ask your coach for a nudge mid-answer." />
+            <Toggle
+              checked={config.awareness}
+              disabled={!config.camera}
+              onChange={(v) => set("awareness", v)}
+              icon={<Eye className="h-4 w-4" />}
+              label="Real interviewer mode"
+              description={
+                config.camera
+                  ? "Reacts like a person would: a raised hand, stepping away, a phone, someone else in the room. Quick glances are ignored."
+                  : "Needs the camera on."
+              }
+            />
+            <Toggle
+              checked={config.screenShare}
+              onChange={(v) => set("screenShare", v)}
+              icon={<MonitorUp className="h-4 w-4" />}
+              label="Screen sharing"
+              description="Show your code, slides or a design — the interviewer can see and ask about it."
+            />
             <label className="flex items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-mute">
                 <Languages className="h-4 w-4" />

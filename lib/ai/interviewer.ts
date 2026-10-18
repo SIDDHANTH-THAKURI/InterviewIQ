@@ -14,15 +14,14 @@ import {
 
 export const COMPLETE_TOKEN = "[INTERVIEW_COMPLETE]";
 
-const ROSTER: { name: string; gender: Gender }[] = [
-  { name: "Maya Chen", gender: "female" },
-  { name: "David Okafor", gender: "male" },
-  { name: "Elena Rossi", gender: "female" },
-  { name: "James Whitfield", gender: "male" },
-  { name: "Priya Nair", gender: "female" },
-  { name: "Arjun Mehta", gender: "male" },
-  { name: "Sofia Alvarez", gender: "female" },
-  { name: "Marcus Lindqvist", gender: "male" },
+/** The cast. `avatar` matches a 3D character in /public/avatars/<avatar>.glb. */
+const ROSTER: { name: string; gender: Gender; avatar: string }[] = [
+  { name: "Maya Chen", gender: "female", avatar: "maya" },
+  { name: "David Okafor", gender: "male", avatar: "david" },
+  { name: "Elena Rossi", gender: "female", avatar: "elena" },
+  { name: "James Whitfield", gender: "male", avatar: "james" },
+  { name: "Priya Nair", gender: "female", avatar: "priya" },
+  { name: "Arjun Mehta", gender: "male", avatar: "arjun" },
 ];
 
 const TITLES: Record<InterviewConfig["format"], [string, string]> = {
@@ -173,7 +172,7 @@ HOW TO SPEAK:
 - Open with a short, warm greeting and introduce yourself${panel ? "s" : ""} by name, plus a one-line icebreaker (except in a drill). Mention once, kindly, that a quiet space helps.
 - When time is nearly up or the format is complete, invite their questions if appropriate, answer briefly, then close warmly and say what happens next.
 - After your final goodbye, output exactly ${COMPLETE_TOKEN} on its own. It is a silent signal — never speak it, and never output it before saying goodbye.
-- Messages in square brackets from the system (like [The candidate asked to skip]) are stage notes: act on them naturally without mentioning them.${panelRules}
+${config.screenShare ? "- The candidate can share their screen with you. When an image of it is attached, you can see it: refer to what's on it naturally (code, slides, a diagram) and ask about it like a real interviewer would. If you ask them to write code, invite them to share their screen and type it.\n" : ""}- Messages in square brackets from the system (like [The candidate asked to skip]) are stage notes: act on them naturally without mentioning them.${panelRules}
 
 ${docs || "No documents were provided — discover their background through conversation."}`;
 }

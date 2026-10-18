@@ -1,0 +1,17 @@
+InterviewIQ interviewer characters
+==================================
+
+The six characters (maya, david, elena, james, priya, arjun .glb) were generated
+with MPFB (MakeHuman Plugin For Blender, https://static.makehumancommunity.org/mpfb.html)
+using MakeHuman community asset packs, and rigged for the TalkingHead library
+(https://github.com/met4citizen/TalkingHead, MIT) using its CC0 rig and weights.
+
+Asset licences
+- MakeHuman base mesh, system assets, skins01/02, suits01, hair01, eyebrows01,
+  eyelashes01, visemes02, faceunits01: CC0
+- maya.glb hairstyle "elvs_wavy_bob" by Elvaerwyn (MakeHuman community hair02 pack): CC-BY
+  https://www.makehumancommunity.org/
+- Skin normal map from "mindfront" skins (MakeHuman community, CC0)
+
+Regenerate the cast with scripts/avatars/build_cast.py (see the header of that
+file), then compress with:  gltf-transform resize … --width 1536 && gltf-transform webp …
