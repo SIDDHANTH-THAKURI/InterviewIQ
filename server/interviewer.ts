@@ -310,9 +310,9 @@ export class InterviewSession {
     }
   }
 
-  end() {
+  end(skipReport = false) {
     if (this.finished || this.closed) return;
-    void this.finish();
+    void this.finish(skipReport);
   }
 
   dispose() {
@@ -741,7 +741,7 @@ ${msgs[i].content as string}` },
 
   /* ────────────────────────────── finish ──────────────────────────────── */
 
-  private async finish() {
+  private async finish(skipReport = false) {
     if (this.finished) return;
     this.finished = true;
     this.stopAwaiting();
@@ -754,6 +754,12 @@ ${msgs[i].content as string}` },
     }
     this.stt?.close();
     this.stt = null;
+    if (skipReport) {
+      this.recordUsageOnce();
+      this.emit({ type: "interview:closed", transcript: this.transcript });
+      this.dispose();
+      return;
+    }
     this.emit({ type: "status", state: "closing" });
     this.emit({ type: "ai:thinking" });
 

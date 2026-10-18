@@ -324,7 +324,8 @@ export type ClientMessage =
   | { type: "control:skip" }
   | { type: "control:pause" }
   | { type: "control:resume" }
-  | { type: "interview:end" };
+  /** skipReport: just end — keep the transcript, don't generate a report. */
+  | { type: "interview:end"; skipReport?: boolean };
 
 export interface InterviewerInfo {
   name: string;
@@ -353,6 +354,8 @@ export type ServerMessage =
   | { type: "coach:hint"; text: string }
   | { type: "interview:wrapping" }
   | { type: "interview:complete"; feedback: InterviewFeedback; transcript: TranscriptTurn[] }
+  /** Ended without a report (the transcript is kept so it can be scored later). */
+  | { type: "interview:closed"; transcript: TranscriptTurn[] }
   | { type: "error"; message: string; fatal?: boolean; code?: string };
 
 /* ─────────────────────────────── Constants ──────────────────────────────── */

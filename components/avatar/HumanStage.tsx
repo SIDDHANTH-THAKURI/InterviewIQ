@@ -86,6 +86,17 @@ export const HumanStage = forwardRef<HumanStageHandle, Props>(function HumanStag
 
   const lipsyncLang = LIPSYNC[language] ?? "en";
 
+  /* ── TalkingHead's start() resumes an audio context that may already be closed and
+     never catches it. Harmless — swallow just that one error. ── */
+  useEffect(() => {
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const r = e.reason as { name?: string; message?: string } | undefined;
+      if (r?.name === "InvalidStateError" && /closed AudioContext/i.test(r.message ?? "")) e.preventDefault();
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
+
   /* ── load heads ── */
   useEffect(() => {
     let cancelled = false;
@@ -102,9 +113,10 @@ export const HumanStage = forwardRef<HumanStageHandle, Props>(function HumanStag
               ttsEndpoint: null,
               lipsyncModules: [...new Set(["en", lipsyncLang])],
               lipsyncLang,
-              cameraView: "head",
-              cameraDistance: 0.7,
-              cameraY: 0.1,
+              // Solo: close video-call framing. Panel tiles are narrow, so frame head-and-shoulders.
+              ...(interviewers.length > 1
+                ? { cameraView: "upper", cameraDistance: 0, cameraY: 0 }
+                : { cameraView: "head", cameraDistance: 0.7, cameraY: 0.1 }),
               cameraRotateEnable: false,
               cameraPanEnable: false,
               cameraZoomEnable: false,
@@ -184,10 +196,18 @@ export const HumanStage = forwardRef<HumanStageHandle, Props>(function HumanStag
   useEffect(() => {
     let lastNod = 0;
     let thoughtAt = 0;
+    let gazeAt = 0;
+    const names = interviewers.map((i) => i.name);
+    /** A point relative to an interviewer's own tile (fractions of its width/height). */
+    const at = (idx: number, fx: number, fy: number): [number, number] => {
+      const r = mounts.current[idx]?.getBoundingClientRect();
+      return r ? [r.left + r.width * fx, r.top + r.height * fy] : [window.innerWidth / 2, window.innerHeight / 2];
+    };
     const iv = setInterval(() => {
       const now = performance.now();
       const m = moodRef.current;
-      const lead = heads.current.get(activeSpeaker) ?? [...heads.current.values()][0];
+      const speakerIdx = Math.max(0, names.indexOf(activeSpeaker));
+      const lead = heads.current.get(names[speakerIdx]);
       if (!lead) return;
       if (m === "listening") {
         const level = micRef.current?.() ?? 0;
@@ -196,26 +216,24 @@ export const HumanStage = forwardRef<HumanStageHandle, Props>(function HumanStag
           lastNod = now;
           playEmoji(lead, "yes");
         }
-      } else if (m === "thinking") {
-        if (now - thoughtAt > 6000) {
-          thoughtAt = now;
-          // People glance away briefly when they think.
-          try {
-            lead.lookAt?.(window.innerWidth * (Math.random() > 0.5 ? 0.15 : 0.85), window.innerHeight * 0.2, 900);
-          } catch {
-            /* noop */
-          }
+      } else if (m === "thinking" && now - thoughtAt > 6000) {
+        thoughtAt = now;
+        // A small, natural glance up and to the side while thinking — inside their own tile.
+        try {
+          lead.lookAt(...at(speakerIdx, Math.random() > 0.5 ? 0.3 : 0.7, 0.18), 900);
+        } catch {
+          /* noop */
         }
       }
-      // Panel: whoever isn't talking looks at whoever is.
-      if (heads.current.size > 1) {
-        const names = [...heads.current.keys()];
-        const speakerIdx = names.indexOf(activeSpeaker);
+      // Panel: the other interviewer glances toward whoever is talking, gently, every few seconds.
+      if (names.length > 1 && m === "speaking" && now - gazeAt > 4000) {
+        gazeAt = now;
         names.forEach((n, i) => {
-          if (n === activeSpeaker || speakerIdx < 0) return;
+          if (i === speakerIdx) return;
           const h = heads.current.get(n);
+          // Aim just past the edge of their own tile, toward the speaker, at eye height.
           try {
-            h?.lookAt?.(window.innerWidth * (speakerIdx < i ? 0.1 : 0.9), window.innerHeight * 0.4, 600);
+            h?.lookAt(...at(i, speakerIdx < i ? -0.05 : 1.05, 0.35), 700);
           } catch {
             /* noop */
           }
@@ -223,7 +241,8 @@ export const HumanStage = forwardRef<HumanStageHandle, Props>(function HumanStag
       }
     }, 700);
     return () => clearInterval(iv);
-  }, [activeSpeaker]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSpeaker, interviewers.map((i) => i.name).join("|")]);
 
   useImperativeHandle(
     ref,

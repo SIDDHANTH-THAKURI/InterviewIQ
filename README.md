@@ -170,7 +170,7 @@ scripts/invite.ts       CLI invites
 ### Scripts
 
 ```bash
-npm run dev        # dev server with hot reload (http://localhost:3000)
+npm run dev        # dev server (app hot-reloads; restart after editing server/ or lib/server)
 npm run build      # production build
 npm start          # production server
 npm run typecheck  # TypeScript

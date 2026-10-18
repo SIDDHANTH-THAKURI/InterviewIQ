@@ -144,7 +144,7 @@ async function main() {
           void session.handleControl(msg.type.slice("control:".length) as "repeat");
           break;
         case "interview:end":
-          session.end();
+          session.end(!!msg.skipReport);
           break;
       }
     });

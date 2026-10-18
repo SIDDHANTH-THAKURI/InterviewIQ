@@ -2,9 +2,9 @@
   "name": "interviewiq",
   "version": "2.0.0",
   "private": true,
-  "description": "InterviewIQ — an invite-only, real-time AI interview coach with a live voice interviewer.",
+  "description": "InterviewIQ \u2014 an invite-only, real-time AI interview coach with a live voice interviewer.",
   "scripts": {
-    "dev": "tsx watch --clear-screen=false --exclude \"./app/**\" --exclude \"./components/**\" --exclude \"./.next/**\" server/index.ts",
+    "dev": "tsx server/index.ts",
     "build": "next build",
     "start": "tsx server/index.ts --prod",
     "typecheck": "tsc --noEmit",

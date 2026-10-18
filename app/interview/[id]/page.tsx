@@ -86,6 +86,7 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
   const [draft, setDraft] = useState("");
   const [micMuted, setMicMuted] = useState(false);
   const [wrapStep, setWrapStep] = useState(0);
+  const [quietEnd, setQuietEnd] = useState(false);
 
   const player = useAudioPlayer();
   const webcam = useWebcam();
@@ -223,6 +224,28 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
           setWrapNotice(true);
           setTimeout(() => setWrapNotice(false), 6000);
           break;
+        case "interview:closed": {
+          endedRef.current = true;
+          setRecord((cur) => {
+            if (!cur) return cur;
+            const next: SessionRecord = {
+              ...cur,
+              status: "unscored",
+              endedAt: Date.now(),
+              durationSec: Math.round(elapsedRef.current),
+              transcript: msg.transcript,
+              hintsUsed: hintsRef.current,
+              cv: trackerRef.current?.getMetrics() ?? null,
+            };
+            void putSession(next).then(() => {
+              teardown();
+              void refreshAccess();
+              router.replace("/history");
+            });
+            return next;
+          });
+          break;
+        }
         case "interview:complete": {
           endedRef.current = true;
           const unscored = msg.feedback.overallScore === 0 && msg.feedback.answers.length === 0;
@@ -466,6 +489,12 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
     setHintLoading(true);
     setHint(null);
     ws.sendJSON({ type: "control:hint" });
+  };
+  const endWithoutReport = () => {
+    setConfirmEnd(false);
+    setQuietEnd(true);
+    setPhase("wrapping");
+    ws.sendJSON({ type: "interview:end", skipReport: true });
   };
   const endNow = () => {
     setConfirmEnd(false);
@@ -824,7 +853,7 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
             <p className="display mt-2 text-4xl">That's a wrap.</p>
             <AnimatePresence mode="wait">
               <motion.p key={wrapStep} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="mt-3 text-sm text-mute">
-                {WRAP_STEPS[wrapStep]}
+                {quietEnd ? "Saving your session…" : WRAP_STEPS[wrapStep]}
               </motion.p>
             </AnimatePresence>
           </Overlay>
@@ -886,11 +915,15 @@ export default function InterviewRoom({ params }: { params: Promise<{ id: string
         <p className="-mt-1 text-sm text-mute">
           {captions.some((c) => c.role === "candidate")
             ? "You'll get your report for everything so far."
-            : "You haven't answered anything yet, so there won't be much to score."}
+            : "You haven't answered anything yet, so there won't be much to score."}{" "}
+          “Just end” skips the report — your transcript is saved in History and you can score it later.
         </p>
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmEnd(false)}>
             Keep going
+          </Button>
+          <Button variant="secondary" onClick={endWithoutReport}>
+            Just end
           </Button>
           <Button variant="danger" onClick={endNow}>
             End & get report
