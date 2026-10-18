@@ -596,7 +596,7 @@ export class InterviewSession {
       minutes,
       sessions: 1,
       costUsd: this.costUsd + ttsCost(this.ttsChars) + stt,
-    });
+    }).catch((err) => console.warn("[usage]", (err as Error).message));
   }
 }
 

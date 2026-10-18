@@ -16,6 +16,7 @@ import { WebSocketServer, WebSocket, type RawData } from "ws";
 import { InterviewSession } from "./interviewer";
 import { verifyPass, adminPasscodeConfigured, type Member } from "../lib/server/access";
 import { byokEnabled, ownerKeys, visitorKeys, type ProviderKeys } from "../lib/server/keys";
+import { storeKind } from "../lib/server/store";
 import { REALTIME_PATH, type ClientMessage } from "../types/interview";
 
 const prod = process.argv.includes("--prod") || process.env.NODE_ENV === "production";
@@ -58,6 +59,7 @@ async function main() {
     };
     const session = new InterviewSession(emit, emitAudio);
     let started = false;
+    let starting = false;
     emit({ type: "status", state: "connected" });
 
     // Close idle sockets that never authenticate.
@@ -65,7 +67,7 @@ async function main() {
       if (!started) ws.close(4401, "unauthenticated");
     }, 15000);
 
-    ws.on("message", (data: RawData, isBinary: boolean) => {
+    ws.on("message", async (data: RawData, isBinary: boolean) => {
       if (isBinary) {
         if (started) session.handleAudio(toBuffer(data));
         return;
@@ -77,12 +79,13 @@ async function main() {
         return;
       }
       if (msg.type === "interview:start") {
-        if (started) return;
+        if (started || starting) return;
+        starting = true;
         // Invite → owner's keys. Otherwise → only the visitor's own keys, never the owner's.
         let member: Member | null = null;
         let keys: ProviderKeys | null = null;
         if (msg.pass) {
-          const v = verifyPass(msg.pass);
+          const v = await verifyPass(msg.pass).catch(() => ({ ok: false as const, reason: "invalid" as const }));
           if (!v.ok) {
             emit({ type: "error", fatal: true, code: "auth", message: "Your invite link is no longer valid." });
             ws.close(4401, "unauthenticated");
@@ -144,6 +147,11 @@ async function main() {
 
   server.listen(port, hostname, () => {
     console.log(`\n  ▲ InterviewIQ ${prod ? "(production)" : "(dev)"} → http://localhost:${port}`);
+    const kind = storeKind();
+    console.log(`  • storage: ${kind === "redis" ? "Upstash Redis" : kind === "file" ? "local file (~/.interviewiq)" : "NOT CONFIGURED"}`);
+    if (kind === "missing") {
+      console.warn("  ⚠ Set KV_REST_API_URL and KV_REST_API_TOKEN (free Upstash Redis) — invites won't work until you do.");
+    }
     if (!adminPasscodeConfigured()) {
       console.warn("  ⚠ ADMIN_PASSCODE is not set in .env.local — the admin console is locked.");
     }

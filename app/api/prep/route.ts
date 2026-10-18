@@ -6,7 +6,7 @@ import { body, caller, fail, json } from "@/lib/server/http";
 export const maxDuration = 300;
 
 export async function POST(req: Request) {
-  const c = caller(req);
+  const c = await caller(req);
   if ("response" in c) return c.response;
   if (c.kind === "invite") {
     const left = remainingPreps(c.member);
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       experienceLevel: b.experienceLevel,
       research: !!b.research,
     });
-    if (c.kind === "invite") recordUsage(c.member.id, { costUsd, preps: pack ? 1 : 0 });
+    if (c.kind === "invite") await recordUsage(c.member.id, { costUsd, preps: pack ? 1 : 0 });
     if (!pack) return fail(502, "Couldn't build the prep pack. Please try again.");
     return json({ pack });
   } catch (err) {

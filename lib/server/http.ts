@@ -1,7 +1,23 @@
-import { verifyPass, type Member } from "./access";
+import { verifyPass as verifyPassRaw, type Member } from "./access";
 import { byokEnabled, KEY_HEADERS, ownerKeys, visitorKeys, type ProviderKeys } from "./keys";
 
 export const PASS_HEADER = "x-iq-pass";
+
+/** Storage problems (e.g. no database configured) surface as a clear 503 instead of a blank 500. */
+export class StoreUnavailable extends Error {}
+
+async function verifyPass(token: string | null | undefined) {
+  try {
+    return await verifyPassRaw(token);
+  } catch (err) {
+    throw new StoreUnavailable((err as Error).message);
+  }
+}
+
+export function storeFailure(err: unknown): Response {
+  console.error("[store]", (err as Error).message);
+  return fail(503, (err as Error).message.startsWith("No database") ? (err as Error).message : "The server's database is unavailable. Try again shortly.");
+}
 
 export function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { "cache-control": "no-store" } });
@@ -22,14 +38,19 @@ function denied(reason: "invalid" | "revoked" | "expired"): Response {
 }
 
 /** Invite holders only (used by endpoints that only make sense for members). */
-export function authed(req: Request): { member: Member } | { response: Response } {
-  const v = verifyPass(req.headers.get(PASS_HEADER));
+export async function authed(req: Request): Promise<{ member: Member } | { response: Response }> {
+  let v;
+  try {
+    v = await verifyPass(req.headers.get(PASS_HEADER));
+  } catch (err) {
+    return { response: storeFailure(err) };
+  }
   if (!v.ok) return { response: denied(v.reason) };
   return { member: v.member };
 }
 
-export function adminOnly(req: Request): { member: Member } | { response: Response } {
-  const r = authed(req);
+export async function adminOnly(req: Request): Promise<{ member: Member } | { response: Response }> {
+  const r = await authed(req);
   if ("response" in r) return r;
   if (r.member.role !== "admin") return { response: fail(403, "Admins only.") };
   return r;
@@ -42,10 +63,15 @@ export function adminOnly(req: Request): { member: Member } | { response: Respon
  */
 export type Caller = { kind: "invite"; member: Member; keys: ProviderKeys } | { kind: "byok"; keys: ProviderKeys };
 
-export function caller(req: Request): Caller | { response: Response } {
+export async function caller(req: Request): Promise<Caller | { response: Response }> {
   const pass = req.headers.get(PASS_HEADER);
   if (pass) {
-    const v = verifyPass(pass);
+    let v;
+    try {
+      v = await verifyPass(pass);
+    } catch (err) {
+      return { response: storeFailure(err) };
+    }
     if (!v.ok) return { response: denied(v.reason) };
     const keys = ownerKeys();
     if (!keys.anthropic) return { response: fail(503, "The server owner hasn't configured an Anthropic key yet.") };

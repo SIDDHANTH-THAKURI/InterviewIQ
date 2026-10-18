@@ -27,7 +27,7 @@ Either way, everything they practice stays in their own browser.
 ### Privacy model
 
 - **No database of anyone's answers.** Profiles, resumes, transcripts, reports and prep packs live in each person's browser (IndexedDB). They can export, restore or wipe it from their profile.
-- The server keeps one small file — the invite registry (names, limits, usage counters) — in `~/.interviewiq/access.json` (or `DATA_DIR`).
+- The server keeps only owner-side bookkeeping — the invite list (names, limits, usage counters) — in Upstash Redis when hosted, or a file in `~/.interviewiq` locally.
 - Resumes are parsed in the browser. Camera metrics (eye contact, steadiness, engagement) are computed on-device with MediaPipe; at most one still frame per minute is sent for a qualitative read, and only when the camera is on.
 - **Your keys never leave the server, and are only used for valid invite links.** The server reads them in one place (`lib/server/keys.ts`, `ownerKeys()`), only after an invite is verified. Every AI call must be handed a key explicitly — there is no default to fall back on — so a request without a valid invite can only ever run on the visitor's own keys.
 - **Visitors' own keys** are stored only in their browser, sent over the encrypted connection per request/session, used in memory, and never written to disk or logged. A rejected or missing key simply fails; it is never topped up with yours.
@@ -67,27 +67,46 @@ Optional: voice IDs, model overrides, `DATA_DIR`, `TURN_SETTLE_MS`, and cost-est
 
 ---
 
-## Sharing with a friend
+## Deploying (Render, free)
 
-An invite link only works where your server is reachable. Two easy options:
+The app is one Node service — web app plus the live voice connection on the same port — so it needs a host that keeps a process running and allows WebSockets. **Render** works on its free plan. (Vercel doesn't: it can't hold the live voice connection.)
 
-### Option A — run it on your computer and share a tunnel
+**1. Create the free database** (stores the invite list and usage — nothing else)
 
-```bash
-npm run build && npm start
-# in another terminal (free, no account needed):
-cloudflared tunnel --url http://localhost:3000
-```
+1. Sign up at [upstash.com](https://upstash.com) → **Create Database** → Redis, any region close to your Render region, free plan.
+2. On the database page, open the **REST API** section and copy the **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`**.
 
-Open the `https://….trycloudflare.com` address it prints, go to `/admin`, and create the invite **from that address** — the link will use it automatically. (Microphones need https, which the tunnel provides.) Your computer must stay on while they practice.
+**2. Configure the Render web service** (Settings)
 
-### Option B — deploy it
+| Setting | Value |
+| --- | --- |
+| Branch | `master` |
+| Build command | `npm ci --include=dev && npm run build` |
+| Start command | `npm start` |
+| Health check path | `/health` |
 
-It's a single Node service (web app + realtime voice on one port), so any host that runs a long-lived Node process works — Railway, Render, Fly.io, a VPS. Not serverless platforms (Vercel functions can't hold the WebSocket).
+**3. Environment variables** (Environment tab)
 
-- **Build:** `npm install && npm run build` · **Start:** `npm start` · **Health check:** `/health`
-- Set the env vars above, plus `DATA_DIR` pointing at a **persistent volume** (e.g. `/data`) so invites survive redeploys.
-- The server listens on `$PORT`.
+| Key | Value |
+| --- | --- |
+| `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY` | your keys |
+| `ELEVENLABS_VOICE_ID_MALE`, `ELEVENLABS_VOICE_ID_FEMALE` | optional voice IDs |
+| `APP_SECRET` | a long random string (keep it stable — changing it invalidates links) |
+| `ADMIN_PASSCODE` | your admin passcode |
+| `OWNER_NAME` | your name |
+| `ALLOW_BYOK` | `true` or `false` |
+| `KV_REST_API_URL` | the Upstash REST URL |
+| `KV_REST_API_TOKEN` | the Upstash REST token |
+| `NODE_VERSION` | `22` |
+
+Save, then **Manual Deploy → Deploy latest commit**. Open `https://<your-service>.onrender.com/admin`, log in, and create invites there — links use that address automatically.
+
+> Free Render services sleep after ~15 minutes idle; the first visit afterwards takes up to a minute to wake. A paid instance removes that.
+
+### Other ways to share
+
+- **From your own computer:** `npm run build && npm start`, then `cloudflared tunnel --url http://localhost:3000`, and create invites from the `https://…trycloudflare.com` address. Works while your PC is on.
+- **Any other Node host** (Railway, Fly.io, a VPS): same build/start commands and env vars. Instead of Redis you can mount a persistent disk and set `DATA_DIR` to it.
 
 ### Invites from the terminal
 
@@ -160,7 +179,9 @@ npm run invite     # create an invite from the terminal
 | "You need a valid invite" | Open the full invite link on that device — or use **Use my own keys**. Links stop working if paused, rotated, deleted, expired, or if `APP_SECRET` changed. |
 | "Your Anthropic key was rejected" | The visitor's own key is wrong or revoked — fix it at `/keys`. |
 | Own-keys user can't speak / hear | Speaking needs a Deepgram key and the interviewer's voice needs an ElevenLabs key; without them the app falls back to typing and captions. |
-| Friend's link won't open | It points at `localhost`. Create invites from your tunnel or deployed URL (see *Sharing*). |
+| Friend's link won't open | It points at `localhost`. Create invites from your deployed or tunnel URL (see *Deploying*). |
+| "No database connected" | Set `KV_REST_API_URL` and `KV_REST_API_TOKEN` from Upstash, then redeploy. |
+| First load takes ~1 minute | Free Render is waking up from sleep. |
 | Microphone blocked | Allow it in the address bar and reload — or choose **Type** in practice settings. Mics require https or localhost. |
 | No interviewer voice | Check `ELEVENLABS_API_KEY`, unmute the tab, or turn off "Interviewer speaks out loud" for captions only. |
 | It replies too soon / too slowly | Tune `TURN_SETTLE_MS` (default 3500). |

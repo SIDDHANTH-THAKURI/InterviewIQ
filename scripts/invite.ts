@@ -21,12 +21,19 @@ if (!name) {
 }
 const limit = (v: string | undefined, d: number) => (v === "none" ? null : v ? Number(v) : d);
 
-const { member, token } = createInvite({
-  name,
-  note: flag("note"),
-  minutesPerMonth: limit(flag("minutes"), 120),
-  prepsPerMonth: limit(flag("preps"), 10),
-  expiresInDays: flag("days") ? Number(flag("days")) : null,
+async function main(name: string) {
+  const { member, token } = await createInvite({
+    name,
+    note: flag("note"),
+    minutesPerMonth: limit(flag("minutes"), 120),
+    prepsPerMonth: limit(flag("preps"), 10),
+    expiresInDays: flag("days") ? Number(flag("days")) : null,
+  });
+  const base = (flag("url") || process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, "");
+  console.log(`\nInvite for ${member.name}:\n\n  ${base}/join/${token}\n`);
+}
+
+main(name).catch((err) => {
+  console.error((err as Error).message);
+  process.exit(1);
 });
-const base = (flag("url") || process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, "");
-console.log(`\nInvite for ${member.name}:\n\n  ${base}/join/${token}\n`);

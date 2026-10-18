@@ -8,7 +8,7 @@ export const maxDuration = 300;
 
 /** Re-scores a saved transcript (used when a session ended before its report arrived). */
 export async function POST(req: Request) {
-  const c = caller(req);
+  const c = await caller(req);
   if ("response" in c) return c.response;
   const b = await body<{
     transcript: TranscriptTurn[];
@@ -28,6 +28,6 @@ export async function POST(req: Request) {
     cv: b.cv ?? null,
     delivery: computeDelivery(transcript, Number(b.hintsUsed) || 0),
   });
-  if (c.kind === "invite") recordUsage(c.member.id, { costUsd });
+  if (c.kind === "invite") await recordUsage(c.member.id, { costUsd });
   return json({ feedback });
 }

@@ -2,20 +2,12 @@
  * Invite-only access control.
  *
  * There is no user database. The owner hands out signed invite links; each link
- * IS the member's pass (an HMAC-signed token). The server keeps a tiny registry
- * file (`.data/access.json`) with each member's name, limits, usage counters and
- * revocation state — never any interview content, which stays in the member's
- * own browser.
- *
- * All file access is synchronous on purpose: Next.js route handlers and the
- * realtime server run in the same Node process but can load separate copies of
- * this module, so the file (not memory) is the single source of truth, and
- * synchronous read-modify-write can never interleave.
+ * IS the member's pass (an HMAC-signed token). The store (lib/server/store.ts)
+ * keeps each member's name, limits, usage counters and revocation state —
+ * never any interview content, which stays in the member's own browser.
  */
 import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { store } from "./store";
 import type { AccessInfo } from "../../types/interview";
 
 export interface MonthUsage {
@@ -36,87 +28,93 @@ export interface Member {
   revoked: boolean;
   expiresAt: number | null;
   limits: { minutesPerMonth: number | null; prepsPerMonth: number | null };
+  /** Loaded alongside the member: month key → counters. */
   usage: Record<string, MonthUsage>;
   lastSeenAt: number | null;
 }
 
-interface Registry {
-  members: Record<string, Member>;
-}
-
 const OWNER_ID = "owner";
+const K = {
+  member: (id: string) => `iq:member:${id}`,
+  members: "iq:members",
+  usage: (id: string, month: string) => `iq:usage:${id}:${month}`,
+  months: (id: string) => `iq:months:${id}`,
+};
 
-// Kept outside the project folder by default so dev file-watchers never see it.
-export const DATA_DIR = process.env.DATA_DIR || path.join(os.homedir(), ".interviewiq");
-const REGISTRY_FILE = path.join(DATA_DIR, "access.json");
-const SECRET_FILE = path.join(DATA_DIR, "secret.key");
-
-/* ───────────────────────────── secrets ───────────────────────────── */
-
-function ensureDir() {
-  if (!fs.existsSync(/*turbopackIgnore: true*/ DATA_DIR)) fs.mkdirSync(/*turbopackIgnore: true*/ DATA_DIR, { recursive: true });
-}
+/* ───────────────────────────── secret ───────────────────────────── */
 
 let cachedSecret: Buffer | null = null;
-function secret(): Buffer {
+
+async function secret(): Promise<Buffer> {
   if (cachedSecret) return cachedSecret;
   const fromEnv = process.env.APP_SECRET?.trim();
-  if (fromEnv) {
-    cachedSecret = Buffer.from(fromEnv, "utf8");
-    return cachedSecret;
+  if (fromEnv) return (cachedSecret = Buffer.from(fromEnv, "utf8"));
+  // No APP_SECRET: generate one once and keep it in the store, so links stay
+  // valid across restarts. Setting APP_SECRET explicitly is still recommended.
+  const kv = store();
+  let s = await kv.get("iq:secret");
+  if (!s) {
+    s = crypto.randomBytes(48).toString("base64url");
+    await kv.set("iq:secret", s);
   }
-  // No APP_SECRET configured: generate one once and keep it next to the registry.
-  ensureDir();
-  if (!fs.existsSync(/*turbopackIgnore: true*/ SECRET_FILE)) {
-    fs.writeFileSync(/*turbopackIgnore: true*/ SECRET_FILE, crypto.randomBytes(48).toString("base64url"), { mode: 0o600 });
-  }
-  cachedSecret = Buffer.from(fs.readFileSync(/*turbopackIgnore: true*/ SECRET_FILE, "utf8").trim(), "utf8");
-  return cachedSecret;
+  return (cachedSecret = Buffer.from(s, "utf8"));
 }
 
-/* ───────────────────────────── registry io ───────────────────────────── */
+/* ───────────────────────────── members ───────────────────────────── */
 
-function read(): Registry {
-  try {
-    const raw = fs.readFileSync(/*turbopackIgnore: true*/ REGISTRY_FILE, "utf8");
-    const reg = JSON.parse(raw) as Registry;
-    if (reg && reg.members) return reg;
-  } catch {
-    /* first run or unreadable — start fresh */
-  }
-  return { members: {} };
+const emptyUsage = (): MonthUsage => ({ minutes: 0, preps: 0, sessions: 0, costUsd: 0 });
+
+async function loadUsage(id: string): Promise<Record<string, MonthUsage>> {
+  const kv = store();
+  const months = await kv.smembers(K.months(id));
+  const entries = await Promise.all(
+    months.map(async (m) => {
+      const h = await kv.hgetall(K.usage(id, m));
+      return [
+        m,
+        {
+          minutes: round2(Number(h.minutes) || 0),
+          preps: Math.round(Number(h.preps) || 0),
+          sessions: Math.round(Number(h.sessions) || 0),
+          costUsd: round4(Number(h.costUsd) || 0),
+        },
+      ] as const;
+    })
+  );
+  return Object.fromEntries(entries);
 }
 
-function write(reg: Registry) {
-  ensureDir();
-  const tmp = REGISTRY_FILE + ".tmp";
-  fs.writeFileSync(/*turbopackIgnore: true*/ tmp, JSON.stringify(reg, null, 2));
-  fs.renameSync(/*turbopackIgnore: true*/ tmp, REGISTRY_FILE);
+async function getMember(id: string): Promise<Member | null> {
+  const raw = await store().get(K.member(id));
+  if (!raw) return id === OWNER_ID ? ensureOwner() : null;
+  return { ...(JSON.parse(raw) as Member), usage: await loadUsage(id) };
 }
 
-function mutate<T>(fn: (reg: Registry) => T): T {
-  const reg = read();
-  ensureOwner(reg);
-  const out = fn(reg);
-  write(reg);
-  return out;
+async function saveMember(m: Member) {
+  const { usage: _usage, ...rest } = m;
+  void _usage;
+  const kv = store();
+  await kv.set(K.member(m.id), JSON.stringify(rest));
+  await kv.sadd(K.members, m.id);
 }
 
-function ensureOwner(reg: Registry) {
-  if (!reg.members[OWNER_ID]) {
-    reg.members[OWNER_ID] = {
-      id: OWNER_ID,
-      name: process.env.OWNER_NAME || "Owner",
-      role: "admin",
-      createdAt: Date.now(),
-      version: 1,
-      revoked: false,
-      expiresAt: null,
-      limits: { minutesPerMonth: null, prepsPerMonth: null },
-      usage: {},
-      lastSeenAt: null,
-    };
-  }
+async function ensureOwner(): Promise<Member> {
+  const raw = await store().get(K.member(OWNER_ID));
+  if (raw) return { ...(JSON.parse(raw) as Member), usage: await loadUsage(OWNER_ID) };
+  const owner: Member = {
+    id: OWNER_ID,
+    name: process.env.OWNER_NAME || "Owner",
+    role: "admin",
+    createdAt: Date.now(),
+    version: 1,
+    revoked: false,
+    expiresAt: null,
+    limits: { minutesPerMonth: null, prepsPerMonth: null },
+    usage: {},
+    lastSeenAt: null,
+  };
+  await saveMember(owner);
+  return owner;
 }
 
 /* ───────────────────────────── tokens ───────────────────────────── */
@@ -126,23 +124,20 @@ interface TokenPayload {
   v: number;
 }
 
-function sign(data: string): string {
-  return crypto.createHmac("sha256", secret()).update(data).digest("base64url");
+async function sign(data: string): Promise<string> {
+  return crypto.createHmac("sha256", await secret()).update(data).digest("base64url");
 }
 
-export function issueToken(member: Pick<Member, "id" | "version">): string {
-  const body = Buffer.from(JSON.stringify({ sub: member.id, v: member.version } satisfies TokenPayload)).toString(
-    "base64url"
-  );
-  return `${body}.${sign(body)}`;
+export async function issueToken(member: Pick<Member, "id" | "version">): Promise<string> {
+  const body = Buffer.from(JSON.stringify({ sub: member.id, v: member.version } satisfies TokenPayload)).toString("base64url");
+  return `${body}.${await sign(body)}`;
 }
 
-function decodeToken(token: string): TokenPayload | null {
+async function decodeToken(token: string): Promise<TokenPayload | null> {
   const [body, mac] = (token || "").trim().split(".");
   if (!body || !mac) return null;
-  const expected = sign(body);
   const a = Buffer.from(mac);
-  const b = Buffer.from(expected);
+  const b = Buffer.from(await sign(body));
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
     const p = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as TokenPayload;
@@ -152,16 +147,12 @@ function decodeToken(token: string): TokenPayload | null {
   }
 }
 
-export type VerifyResult =
-  | { ok: true; member: Member }
-  | { ok: false; reason: "invalid" | "revoked" | "expired" };
+export type VerifyResult = { ok: true; member: Member } | { ok: false; reason: "invalid" | "revoked" | "expired" };
 
-export function verifyPass(token: string | null | undefined): VerifyResult {
-  const p = token ? decodeToken(token) : null;
+export async function verifyPass(token: string | null | undefined): Promise<VerifyResult> {
+  const p = token ? await decodeToken(token) : null;
   if (!p) return { ok: false, reason: "invalid" };
-  const reg = read();
-  ensureOwner(reg);
-  const m = reg.members[p.sub];
+  const m = await getMember(p.sub);
   if (!m || m.version !== p.v) return { ok: false, reason: "invalid" };
   if (m.revoked) return { ok: false, reason: "revoked" };
   if (m.expiresAt && Date.now() > m.expiresAt) return { ok: false, reason: "expired" };
@@ -174,14 +165,13 @@ export function adminPasscodeConfigured(): boolean {
   return !!process.env.ADMIN_PASSCODE?.trim();
 }
 
-export function loginAdmin(passcode: string): string | null {
+export async function loginAdmin(passcode: string): Promise<string | null> {
   const expected = process.env.ADMIN_PASSCODE?.trim();
   if (!expected) return null;
   const a = crypto.createHash("sha256").update(passcode.trim()).digest();
   const b = crypto.createHash("sha256").update(expected).digest();
   if (!crypto.timingSafeEqual(a, b)) return null;
-  const owner = mutate((reg) => reg.members[OWNER_ID]);
-  return issueToken(owner);
+  return issueToken(await ensureOwner());
 }
 
 /* ───────────────────────────── usage + quota ───────────────────────────── */
@@ -190,36 +180,26 @@ export function monthKey(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function emptyUsage(): MonthUsage {
-  return { minutes: 0, preps: 0, sessions: 0, costUsd: 0 };
-}
-
 export function currentUsage(m: Member): MonthUsage {
   return { ...emptyUsage(), ...(m.usage[monthKey()] ?? {}) };
 }
 
-export function recordUsage(id: string, delta: Partial<MonthUsage>) {
-  mutate((reg) => {
-    const m = reg.members[id];
-    if (!m) return;
-    const key = monthKey();
-    const u = { ...emptyUsage(), ...(m.usage[key] ?? {}) };
-    u.minutes = round2(u.minutes + (delta.minutes ?? 0));
-    u.preps += delta.preps ?? 0;
-    u.sessions += delta.sessions ?? 0;
-    u.costUsd = round4(u.costUsd + (delta.costUsd ?? 0));
-    m.usage[key] = u;
-    m.lastSeenAt = Date.now();
-  });
+/** Atomic counter increments, so parallel requests never lose usage. */
+export async function recordUsage(id: string, delta: Partial<MonthUsage>): Promise<void> {
+  const kv = store();
+  const month = monthKey();
+  await kv.sadd(K.months(id), month);
+  await Promise.all(
+    (Object.entries(delta) as [keyof MonthUsage, number][])
+      .filter(([, v]) => v)
+      .map(([field, v]) => kv.hincrbyfloat(K.usage(id, month), field, v))
+  );
 }
 
 /** Records "last seen", at most every few minutes to keep writes rare. */
-export function touch(id: string) {
-  const m = read().members[id];
-  if (m?.lastSeenAt && Date.now() - m.lastSeenAt < 5 * 60_000) return;
-  mutate((reg) => {
-    if (reg.members[id]) reg.members[id].lastSeenAt = Date.now();
-  });
+export async function touch(m: Member): Promise<void> {
+  if (m.lastSeenAt && Date.now() - m.lastSeenAt < 5 * 60_000) return;
+  await saveMember({ ...m, lastSeenAt: Date.now() });
 }
 
 /** Minutes the member may still spend this month (null = unlimited). */
@@ -234,14 +214,7 @@ export function remainingPreps(m: Member): number | null {
 }
 
 export function toAccessInfo(m: Member): AccessInfo {
-  const u = currentUsage(m);
-  return {
-    id: m.id,
-    name: m.name,
-    role: m.role,
-    limits: m.limits,
-    usage: { minutes: u.minutes, preps: u.preps, sessions: u.sessions, costUsd: u.costUsd },
-  };
+  return { id: m.id, name: m.name, role: m.role, limits: m.limits, usage: currentUsage(m) };
 }
 
 /* ───────────────────────────── invites (admin) ───────────────────────────── */
@@ -254,25 +227,22 @@ export interface InviteInput {
   expiresInDays: number | null;
 }
 
-export function createInvite(input: InviteInput): { member: Member; token: string } {
-  return mutate((reg) => {
-    const id = crypto.randomBytes(6).toString("base64url");
-    const member: Member = {
-      id,
-      name: input.name.trim().slice(0, 60) || "Friend",
-      note: input.note?.trim().slice(0, 200) || undefined,
-      role: "member",
-      createdAt: Date.now(),
-      version: 1,
-      revoked: false,
-      expiresAt: input.expiresInDays ? Date.now() + input.expiresInDays * 86_400_000 : null,
-      limits: { minutesPerMonth: input.minutesPerMonth, prepsPerMonth: input.prepsPerMonth },
-      usage: {},
-      lastSeenAt: null,
-    };
-    reg.members[id] = member;
-    return { member, token: issueToken(member) };
-  });
+export async function createInvite(input: InviteInput): Promise<{ member: Member; token: string }> {
+  const member: Member = {
+    id: crypto.randomBytes(6).toString("base64url"),
+    name: input.name.trim().slice(0, 60) || "Friend",
+    note: input.note?.trim().slice(0, 200) || undefined,
+    role: "member",
+    createdAt: Date.now(),
+    version: 1,
+    revoked: false,
+    expiresAt: input.expiresInDays ? Date.now() + input.expiresInDays * 86_400_000 : null,
+    limits: { minutesPerMonth: input.minutesPerMonth, prepsPerMonth: input.prepsPerMonth },
+    usage: {},
+    lastSeenAt: null,
+  };
+  await saveMember(member);
+  return { member, token: await issueToken(member) };
 }
 
 export interface MemberPatch {
@@ -285,36 +255,35 @@ export interface MemberPatch {
   rotate?: boolean;
 }
 
-export function updateMember(id: string, patch: MemberPatch): { member: Member; token: string } | null {
+export async function updateMember(id: string, patch: MemberPatch): Promise<{ member: Member; token: string } | null> {
   if (id === OWNER_ID && (patch.revoked || patch.rotate)) return null;
-  return mutate((reg) => {
-    const m = reg.members[id];
-    if (!m) return null;
-    if (patch.name !== undefined) m.name = patch.name.trim().slice(0, 60) || m.name;
-    if (patch.note !== undefined) m.note = patch.note.trim().slice(0, 200) || undefined;
-    if (patch.revoked !== undefined) m.revoked = patch.revoked;
-    if (patch.minutesPerMonth !== undefined) m.limits.minutesPerMonth = patch.minutesPerMonth;
-    if (patch.prepsPerMonth !== undefined) m.limits.prepsPerMonth = patch.prepsPerMonth;
-    if (patch.rotate) m.version += 1;
-    return { member: m, token: issueToken(m) };
-  });
+  const m = await getMember(id);
+  if (!m) return null;
+  if (patch.name !== undefined) m.name = patch.name.trim().slice(0, 60) || m.name;
+  if (patch.note !== undefined) m.note = patch.note.trim().slice(0, 200) || undefined;
+  if (patch.revoked !== undefined) m.revoked = patch.revoked;
+  if (patch.minutesPerMonth !== undefined) m.limits.minutesPerMonth = patch.minutesPerMonth;
+  if (patch.prepsPerMonth !== undefined) m.limits.prepsPerMonth = patch.prepsPerMonth;
+  if (patch.rotate) m.version += 1;
+  await saveMember(m);
+  return { member: m, token: await issueToken(m) };
 }
 
-export function deleteMember(id: string): boolean {
+export async function deleteMember(id: string): Promise<boolean> {
   if (id === OWNER_ID) return false;
-  return mutate((reg) => {
-    if (!reg.members[id]) return false;
-    delete reg.members[id];
-    return true;
-  });
+  const kv = store();
+  if (!(await kv.get(K.member(id)))) return false;
+  await kv.del(K.member(id));
+  await kv.srem(K.members, id);
+  return true;
 }
 
-export function listMembers(): { member: Member; token: string }[] {
-  const reg = read();
-  ensureOwner(reg);
-  return Object.values(reg.members)
-    .sort((a, b) => (a.id === OWNER_ID ? -1 : b.id === OWNER_ID ? 1 : b.createdAt - a.createdAt))
-    .map((member) => ({ member, token: issueToken(member) }));
+export async function listMembers(): Promise<{ member: Member; token: string }[]> {
+  await ensureOwner();
+  const ids = await store().smembers(K.members);
+  const members = (await Promise.all(ids.map((id) => getMember(id)))).filter((m): m is Member => !!m);
+  members.sort((a, b) => (a.id === OWNER_ID ? -1 : b.id === OWNER_ID ? 1 : b.createdAt - a.createdAt));
+  return Promise.all(members.map(async (member) => ({ member, token: await issueToken(member) })));
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;

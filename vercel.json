@@ -1,0 +1,3 @@
+{
+  "redirects": [{ "source": "/:path*", "destination": "https://interviewiq-ws.onrender.com/:path*", "permanent": false }]
+}
