@@ -1,10 +1,10 @@
 import WebSocket from "ws";
-import { MIC_SAMPLE_RATE } from "../types/interview";
 
 export interface STTHandlers {
   onOpen?: () => void;
   onInterim?: (text: string) => void;
-  onFinal?: (text: string) => void;
+  /** A finalized phrase plus how many seconds of speech it covered. */
+  onFinal?: (text: string, durationSec: number) => void;
   onUtteranceEnd?: () => void;
   onError?: (message: string) => void;
 }
@@ -32,13 +32,14 @@ export class DeepgramSTT {
   constructor(
     private apiKey: string,
     private handlers: STTHandlers,
-    private sampleRate: number = MIC_SAMPLE_RATE
+    private sampleRate: number = 48000,
+    private language = "en"
   ) {}
 
   start() {
     const params = new URLSearchParams({
       model: "nova-3",
-      language: "en-US",
+      language: this.language === "en" ? "en-US" : this.language,
       encoding: "linear16",
       sample_rate: String(this.sampleRate),
       channels: "1",
@@ -47,7 +48,8 @@ export class DeepgramSTT {
       utterance_end_ms: "1500",
       punctuate: "true",
       smart_format: "true",
-      filler_words: "false",
+      // Keep "um"/"uh" so the report can count them honestly.
+      filler_words: "true",
     });
     const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
     const ws = new WebSocket(url, {
@@ -72,7 +74,7 @@ export class DeepgramSTT {
           const transcript: string = alt?.transcript ?? "";
           if (!transcript) return;
           if (msg.is_final) {
-            this.handlers.onFinal?.(transcript);
+            this.handlers.onFinal?.(transcript, Number(msg.duration) || 0);
             if (msg.speech_final) this.handlers.onUtteranceEnd?.();
           } else {
             this.handlers.onInterim?.(transcript);

@@ -1,48 +1,33 @@
 import type { Metadata, Viewport } from "next";
-import { Playfair_Display, DM_Sans } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
-const display = Playfair_Display({
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
+const instrument = Instrument_Serif({
   subsets: ["latin"],
-  variable: "--font-display",
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-instrument",
   display: "swap",
-  weight: ["400", "500", "600", "700", "800", "900"],
-});
-
-const sans = DM_Sans({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-  weight: ["300", "400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "InterviewIQ — Your AI interview, live.",
+  title: { default: "InterviewIQ — walk in ready", template: "%s · InterviewIQ" },
   description:
-    "A real-time, AI-powered mock interview. An animated interviewer speaks, listens and watches — then tells you the truth about how you did.",
-  metadataBase: new URL("https://interviewiq.app"),
-  openGraph: {
-    title: "InterviewIQ",
-    description:
-      "A real-time, AI-powered mock interview that adapts to your voice, your face and your story.",
-    type: "website",
-  },
+    "A live AI interviewer that talks with you, listens, adapts to every answer — and shows you exactly how to get better.",
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#FAFAF8",
-  width: "device-width",
-  initialScale: 1,
+  themeColor: "#0a0a0d",
+  colorScheme: "dark",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${sans.variable}`}>
-      <body className="font-sans antialiased">{children}</body>
+    <html lang="en" className={`${geist.variable} ${geistMono.variable} ${instrument.variable}`}>
+      <body className="grain font-sans">{children}</body>
     </html>
   );
 }

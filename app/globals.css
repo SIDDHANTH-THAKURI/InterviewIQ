@@ -1,144 +1,199 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  /* The single committed accent. Swap these two lines for cobalt
-     (--accent: #2563EB; --accent-ink: #1E3A8A;) and the whole app follows. */
-  --accent: #f59e0b;
-  --accent-ink: #b45309;
+/* ───────────────────────────── Design tokens ─────────────────────────────
+   Night studio: deep ink surfaces, warm "ember" for the interviewer's voice,
+   cool "tide" for listening, "iris" for thinking. */
+@theme {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-instrument), ui-serif, Georgia, serif;
 
-  --cream: #fafaf8;
-  --ink: #111111;
+  --color-ink-950: #060608;
+  --color-ink-900: #0a0a0d;
+  --color-ink-850: #0e0e12;
+  --color-ink-800: #131318;
+  --color-ink-700: #1b1b22;
+  --color-ink-600: #26262f;
+
+  --color-paper: #f4f1ea;
+  --color-paper-dim: #c9c6bf;
+  --color-mute: #9a978f;
+  --color-faint: #6c6a66;
+
+  --color-ember: #ff8a4c;
+  --color-ember-soft: #ffb07f;
+  --color-gold: #ffc56e;
+  --color-tide: #7dd3fc;
+  --color-iris: #a78bfa;
+
+  --color-good: #4ade80;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+
+  --radius-xl2: 1.25rem;
+  --radius-xl3: 1.75rem;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-float: float 8s ease-in-out infinite;
+  --animate-breathe: breathe 8s ease-in-out infinite;
+
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes breathe {
+    0%, 100% { transform: scale(0.72); opacity: 0.55; }
+    40%, 55% { transform: scale(1); opacity: 1; }
+  }
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --line: rgb(255 255 255 / 0.08);
+    --line-strong: rgb(255 255 255 / 0.14);
+  }
+
   html {
+    background: var(--color-ink-900);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
   body {
-    background-color: var(--cream);
-    color: var(--ink);
-    font-feature-settings: "ss01", "cv01", "cv11";
+    background: var(--color-ink-900);
+    color: var(--color-paper);
+    font-feature-settings: "ss01", "cv11";
+    min-height: 100dvh;
   }
 
   ::selection {
-    background: var(--accent);
+    background: color-mix(in oklab, var(--color-ember) 70%, transparent);
     color: #fff;
   }
 
-  /* Refined, low-contrast scrollbars that suit the editorial palette */
+  :focus-visible {
+    outline: 2px solid var(--color-ember);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
   * {
     scrollbar-width: thin;
-    scrollbar-color: #d8d8d4 transparent;
+    scrollbar-color: rgb(255 255 255 / 0.14) transparent;
   }
-  *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+
+  button {
+    cursor: pointer;
   }
-  *::-webkit-scrollbar-thumb {
-    background: #d8d8d4;
-    border-radius: 999px;
-    border: 3px solid transparent;
-    background-clip: content-box;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    background: #c4c4be;
-    background-clip: content-box;
+  button:disabled {
+    cursor: not-allowed;
   }
 }
 
 @layer components {
-  /* Editorial display heading helper */
   .display {
-    font-family: var(--font-display), Georgia, serif;
-    letter-spacing: -0.03em;
-    line-height: 0.95;
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 0.98;
   }
 
-  /* Thin uppercase eyebrow label used across pages */
-  .eyebrow {
-    font-family: var(--font-sans), system-ui, sans-serif;
-    text-transform: uppercase;
-    letter-spacing: 0.22em;
-    font-size: 0.72rem;
-    font-weight: 500;
+  /* Frosted panel used across the app */
+  .glass {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.018));
+    border: 1px solid var(--line);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.05),
+      0 20px 60px -30px rgb(0 0 0 / 0.8);
+    backdrop-filter: blur(18px) saturate(140%);
   }
 
-  /* Subtle paper card */
-  .card {
-    background: var(--paper, #fff);
-    border: 1px solid #e5e5e3;
-    border-radius: 16px;
-    box-shadow: 0 1px 2px rgba(17, 17, 17, 0.04),
-      0 8px 24px -12px rgba(17, 17, 17, 0.1);
+  .hairline {
+    border-color: var(--line);
   }
 
-  /* Primary CTA — sharp, high-contrast, editorial */
-  .btn-primary {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.6rem;
-    background: var(--ink);
-    color: var(--cream);
-    border-radius: 999px;
-    padding: 0.95rem 1.75rem;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-      box-shadow 0.25s ease, background 0.25s ease;
-  }
-  .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 16px 32px -16px rgba(17, 17, 17, 0.6);
-  }
-  .btn-primary:active {
-    transform: translateY(0);
+  /* Warm gradient text for key words */
+  .text-ember-grad {
+    background: linear-gradient(100deg, #ffd6a5 0%, var(--color-gold) 30%, var(--color-ember) 70%, #ff6a5c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
-  .btn-ghost {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    border: 1px solid #e5e5e3;
-    border-radius: 999px;
-    padding: 0.85rem 1.4rem;
-    background: transparent;
-    transition: border-color 0.2s ease, background 0.2s ease,
-      transform 0.2s ease;
+  .shimmer-text {
+    background: linear-gradient(90deg, var(--color-mute) 0%, var(--color-paper) 50%, var(--color-mute) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: var(--animate-shimmer);
   }
-  .btn-ghost:hover {
-    border-color: #111;
-    transform: translateY(-1px);
+
+  /* Grain over the whole page for a filmic finish */
+  .grain::after {
+    content: "";
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    opacity: 0.045;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+
+  /* Subtle dotted grid used behind sections */
+  .dot-grid {
+    background-image: radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, black 60%, transparent);
+  }
+  .mask-fade-y {
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
-  .text-pretty {
-    text-wrap: pretty;
+}
+
+/* Clean print for reports (Save as PDF) */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
   }
-  /* Fine grain/noise overlay for a tactile, printed feel */
-  .grain::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.4;
-    mix-blend-mode: multiply;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  .no-print {
+    display: none !important;
   }
-  .accent-underline {
-    background-image: linear-gradient(var(--accent), var(--accent));
-    background-position: 0 100%;
-    background-repeat: no-repeat;
-    background-size: 100% 0.12em;
+  .glass {
+    background: #fff !important;
+    border-color: #ddd !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+  .grain::after {
+    display: none;
+  }
+  .print-dark-text,
+  .print-dark-text * {
+    color: #111 !important;
   }
 }

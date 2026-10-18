@@ -1,225 +1,158 @@
 # InterviewIQ
 
-A real-time, AI-powered mock interview platform. An animated interviewer **speaks** to you (ElevenLabs voice), **listens** to your spoken answers (Deepgram speech-to-text), **watches** you through your webcam (Claude vision), and **adapts** every question in real time (Claude Opus 4.8) — then auto-delivers an honest, scored feedback report.
+**Walk in ready.** An invite-only AI interview coach. A live interviewer talks with you out loud, listens until you've finished, adapts every follow-up to what you actually said — and then shows you, answer by answer, how to say it better.
 
-Once the interview starts, you never click anything.
+You run it with your own API keys and share it with people who need it. They get a link — no account, no password, no keys — and everything they practice stays in their own browser.
 
 ---
 
-## ✨ What's inside
+## What it does
 
-| Layer | Tech |
+| | |
 | --- | --- |
-| Frontend | Next.js 14 (App Router), TypeScript, Tailwind, Framer Motion |
-| Avatar | Three.js — a hand-built stylized bust with amplitude-driven lip sync, blinking, breathing, head-tilt thinking & listening nods |
-| Voice out | ElevenLabs streaming TTS (`eleven_turbo_v2`, PCM 24 kHz) → gapless Web Audio playback |
-| Voice in | Deepgram `nova-3` realtime STT (16 kHz PCM via AudioWorklet) |
-| Vision | Claude Haiku 4.5 on a webcam frame every 3 s |
-| Brain | Claude Opus 4.8 — adaptive questions + final feedback |
-| Realtime | Standalone Node WebSocket server (`ws`) |
-| State | Zustand + localStorage persistence |
-| DB (optional) | Supabase (Postgres) |
+| **Live interviews** | Real-time voice (or typed) interviews with one interviewer or a panel of two. Waits for you to finish, probes vague answers, and closes naturally. |
+| **Eight practice formats** | Full mock · five-minute drill · behavioral (STAR) · technical deep-dive · "tell me about yourself" · salary negotiation · fix-my-weak-spot · any custom scenario. |
+| **Built for nerves** | Gentle difficulty, a 30-second breathing reset, private mid-answer hints, pause, repeat, skip, and type-instead-of-speak. |
+| **Honest reports** | Overall score and grade, five skill scores, a hiring signal, what worked, three things to fix (each with a drill), and a **stronger rewrite of every answer** in the candidate's own words. Measured delivery stats: pace, filler words, answer length. Optional on-device camera metrics. |
+| **Prep packs** | Paste a job post → likely questions with answer outlines, a STAR story bank built from the resume, concerns to get ahead of, questions to ask back, a day-of checklist, and optional live company research. |
+| **Progress** | Readiness score, trend chart, skill averages, streaks, and a recommended next session. |
+| **Languages** | English, English + Hinglish/mixed, Hindi, Spanish, French, German, Portuguese. |
+| **Invite-only** | An owner console to create links, set monthly minute/prep limits, pause or rotate links, and see usage and estimated cost per person. |
+
+### Privacy model
+
+- **No database of anyone's answers.** Profiles, resumes, transcripts, reports and prep packs live in each person's browser (IndexedDB). They can export, restore or wipe it from their profile.
+- The server keeps one small file — the invite registry (names, limits, usage counters) — in `~/.interviewiq/access.json` (or `DATA_DIR`).
+- Resumes are parsed in the browser. Camera metrics (eye contact, steadiness, engagement) are computed on-device with MediaPipe; at most one still frame per minute is sent for a qualitative read, and only when the camera is on.
+- Your API keys never leave the server.
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
-### 1. Prerequisites
-- Node.js 18.18+ (v22 recommended)
-- A desktop browser with camera + mic (Chrome/Edge/Safari)
+**Requirements:** Node.js 20.9+ and a desktop browser with a microphone (Chrome, Edge or Safari).
 
-### 2. Install
 ```bash
 npm install
+cp .env.example .env.local      # then fill it in (see below)
+npm run dev                     # → http://localhost:3000
 ```
 
-### 3. Add your API keys
-Copy the example env file and fill it in:
+Then:
+
+1. Open **http://localhost:3000/admin** and enter your `ADMIN_PASSCODE`.
+2. Click **Open the app** to use it yourself, or **New invite** to create a link for a friend.
+
+### Environment
+
+| Variable | Needed for |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Interviewer, reports, prep packs, hints — [console.anthropic.com](https://console.anthropic.com) |
+| `ELEVENLABS_API_KEY` | The interviewer's voice — [elevenlabs.io](https://elevenlabs.io) |
+| `DEEPGRAM_API_KEY` | Hearing spoken answers — [console.deepgram.com](https://console.deepgram.com) |
+| `APP_SECRET` | Signs invite links. Changing it invalidates all links. If unset, one is generated in the data folder. |
+| `ADMIN_PASSCODE` | Unlocks `/admin`. |
+| `OWNER_NAME` | Shown to friends as "<name> invited you". |
+
+Optional: voice IDs, model overrides, `DATA_DIR`, `TURN_SETTLE_MS`, and cost-estimate rates — see `.env.example`.
+
+**Models** (override in `.env.local`): interviewer `claude-sonnet-5-5` (fast, conversational), reports and prep packs `claude-opus-5-5`, vision/hints/resume reading `claude-haiku-5-5`, company research `claude-sonnet-5-5` with web search. All calls opt into Anthropic's server-side refusal fallback.
+
+---
+
+## Sharing with a friend
+
+An invite link only works where your server is reachable. Two easy options:
+
+### Option A — run it on your computer and share a tunnel
+
 ```bash
-cp .env.example .env.local
+npm run build && npm start
+# in another terminal (free, no account needed):
+cloudflared tunnel --url http://localhost:3000
 ```
 
-You need four keys for the live experience:
+Open the `https://….trycloudflare.com` address it prints, go to `/admin`, and create the invite **from that address** — the link will use it automatically. (Microphones need https, which the tunnel provides.) Your computer must stay on while they practice.
 
-| Variable | Purpose | Where to get it |
-| --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Interviewer brain + feedback | https://console.anthropic.com → API Keys |
-| `ELEVENLABS_API_KEY` | Interviewer voice (TTS) | https://elevenlabs.io → Profile → API Key |
-| `DEEPGRAM_API_KEY` | Candidate speech recognition (STT) | https://console.deepgram.com → API Keys |
-| `ELEVENLABS_VOICE_ID_MALE` | Male interviewer voice | ElevenLabs → Voices (default: "Adam") |
-| `ELEVENLABS_VOICE_ID_FEMALE` | Female interviewer voice | ElevenLabs → Voices (default: "Rachel") |
+### Option B — deploy it
 
-Supabase keys are **optional** (see below). All keys are read **server-side only** — the browser only ever sees `NEXT_PUBLIC_WS_URL`.
+It's a single Node service (web app + realtime voice on one port), so any host that runs a long-lived Node process works — Railway, Render, Fly.io, a VPS. Not serverless platforms (Vercel functions can't hold the WebSocket).
 
-> **BYOK mode:** Users can also enter their own API keys directly in the app at `/keys` — no `.env.local` required for end-users.
+- **Build:** `npm install && npm run build` · **Start:** `npm start` · **Health check:** `/health`
+- Set the env vars above, plus `DATA_DIR` pointing at a **persistent volume** (e.g. `/data`) so invites survive redeploys.
+- The server listens on `$PORT`.
 
-### 4. Run (both servers at once)
+### Invites from the terminal
+
 ```bash
-npm run dev
+npm run invite -- "Aarav" --minutes 120 --preps 10 --url https://your-app.example.com
 ```
-This starts:
-- the Next.js app on **http://localhost:3000**
-- the realtime WebSocket server on **ws://localhost:3002**
-
-Open http://localhost:3000 and follow the flow: landing → API keys → intro → interview setup → interview.
-
-> Prefer separate terminals? `npm run dev:web` and `npm run dev:ws`.
 
 ---
 
-## 🧠 How it works
+## How it works
 
 ```
- Browser (interview room)                    WebSocket server
- ─────────────────────────                   ─────────────────
- mic → AudioWorklet → PCM ───[binary]──────▶ Deepgram STT
-                                              │  (interim → transcript:interim)
-                                              │  (utterance end ▼)
- webcam → frame /3s ────────[vision:frame]─▶ Claude Vision ──▶ vision:analysis
-                                              │
-                                              ▼
-                                          Claude Opus (brain)
-                                          + latest vision context
-                                              │ streams text
-                                              ▼
- speakers ◀──[binary PCM]── gapless ◀──── ElevenLabs TTS
- avatar jaw ◀── amplitude (AnalyserNode)
-                                              │
-                              [INTERVIEW_COMPLETE] or timer/end
-                                              ▼
- /feedback ◀──[interview:complete]──── Claude (structured JSON feedback)
+ Browser                                          Node server (one port)
+ ───────                                          ──────────────────────
+ mic → AudioWorklet → PCM ──── binary /realtime ──▶ Deepgram Nova-3 (streaming STT)
+ typed answer ──────────────── candidate:text ──▶        │ waits ~3.5 s of silence
+                                                         ▼
+                                                  Claude Sonnet 5.5 (interviewer)
+                                                         │ streamed sentence by sentence
+ speakers ◀─ gapless Web Audio ◀── binary PCM ──── ElevenLabs Flash v2.5 (TTS)
+ Aura orb / 3D avatar ◀── amplitude
+ webcam → MediaPipe (on device) ─ cv:metrics ───▶ one frame/min → Claude Haiku 5.5
+                                                         │ time up / goodbye
+ /report ◀──────────────── interview:complete ─── Claude Opus 5.5 (structured report)
+ IndexedDB ◀── saved locally
 ```
 
-- **Audio travels as raw binary frames**; all control events are JSON. (See `types/interview.ts` for the full protocol.)
-- The brain's reply is **streamed sentence-by-sentence into TTS** so the avatar starts speaking quickly, with a soft "thinking" hum covering any gap.
-- The candidate's mic is muted while the avatar speaks, keeping the AI's own voice out of the transcript.
-- **Panel mode** spawns two AI interviewers with distinct voices and names; the LLM emits `[Name]: text` tags that the server routes to the correct TTS instance.
+- `/realtime` is authenticated with the member's signed pass; the server enforces monthly minutes, a hard time cap per session, and records usage + estimated cost.
+- If a session drops, the transcript so far is kept and can be scored later from the report page.
 
----
-
-## 🗺️ User flow
-
-```
-/ (landing) → /keys (API keys, mandatory) → /welcome (animated intro) → /setup → /interview → /feedback
-```
-
-- `/keys` — BYOK keys entry. Keys are stored in `localStorage`, never sent to any server other than the respective API.
-- `/welcome` — one-time cinematic intro with the 3D avatar speaking via ElevenLabs. Auto-skipped on return visits.
-- `/setup` — upload CV/JD, choose role, interview type, persona, duration, and optional panel mode.
-- `/interview` — live interview room (webcam, mic, avatar, transcript).
-- `/feedback` — scored report with dimension breakdown, vision notes, and transcript annotations. Saved to `localStorage` history.
-
----
-
-## 📁 Project structure
+### Project layout
 
 ```
 app/
-  page.tsx             landing (motion graphics, ambient blobs, live orb)
-  keys/                API key entry (BYOK)
-  welcome/             one-time animated intro with 3D avatar + ElevenLabs TTS
-  setup/               interview configuration
-  interview/           live interview room
-  feedback/            scored feedback report
-  api/intro-tts/       server-side ElevenLabs proxy (avoids CORS on /welcome)
+  page.tsx              landing
+  join/[token]/         invite landing
+  admin/                owner console
+  (app)/                signed-in app: home, practice, prep, history, profile, report, onboarding
+  interview/[id]/       the live room
+  api/                  access, admin, prep, report, profile/analyze
 components/
-  avatar/              AvatarCanvas · useAvatarControls · avatarLoader
-  interview/           WebcamFeed · LiveTranscript · SessionTimer · AudioVisualiser
-  feedback/            ScoreCircle · RadarChart · TranscriptAnnotations · VisionReport
-  setup/               DocumentUpload · ConfigStep · MediaCheck
-  ui/                  LoadingLink (spinner nav) · Reveal
-hooks/
-  useWebSocket         WS connection + message routing
-  useMicrophone        AudioWorklet mic capture
-  useWebcam            webcam feed
-  useAudioPlayer       ElevenLabs PCM playback + lip-sync amplitude
-  useIntroSpeech       ElevenLabs TTS for /welcome intro sequence
-server/                ws.ts · interviewer.ts · tts.ts · stt.ts · vision.ts · env.ts
+  aura/AuraOrb.tsx      WebGL voice orb (the interviewer's presence)
+  avatar/               optional 3D human interviewer (Three.js)
+  room/ report/ shell/ ui/
+hooks/                  mic, webcam, audio player, websocket
 lib/
-  claude.ts            prompt builders, voice pickers, panel helpers
-  persistence.ts       localStorage history + draft config helpers
-  parsePDF.ts
-  supabase.ts
-  pdfReport.ts
-store/                 interviewStore.ts (Zustand + sessionStorage)
-types/                 interview.ts (shared domain + WS protocol)
-public/                pcm-worklet.js (mic capture processor)
-supabase/              schema.sql
+  ai/                   Claude client, interviewer prompts, report, prep, delivery stats
+  server/               invite registry, pricing, http helpers
+  client/               IndexedDB, API client, app store, insights
+server/                 index.ts (Next + WebSocket), interviewer.ts (session engine), stt, tts, vision
+scripts/invite.ts       CLI invites
+```
+
+### Scripts
+
+```bash
+npm run dev        # dev server with hot reload (http://localhost:3000)
+npm run build      # production build
+npm start          # production server
+npm run typecheck  # TypeScript
+npm run invite     # create an invite from the terminal
 ```
 
 ---
 
-## 🎤 Interview modes
-
-| Mode | Description |
-| --- | --- |
-| **Standard** | Single AI interviewer, chosen persona (Friendly / Tough / Brutal) |
-| **Panel** | Two AI interviewers with distinct names and voices conduct the session together |
-
-Panel mode is toggled in `/setup` under the Format group.
-
----
-
-## 🗄️ Supabase (optional)
-
-Enables session recovery + cloud history. To turn it on:
-1. Create a project at https://supabase.com
-2. Run `supabase/schema.sql` in the SQL editor
-3. Add to `.env.local`:
-   ```
-   SUPABASE_URL=...
-   SUPABASE_ANON_KEY=...
-   NEXT_PUBLIC_SUPABASE_URL=...
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-   # optional, for server writes that bypass RLS:
-   SUPABASE_SERVICE_ROLE_KEY=...
-   ```
-The server checkpoints the transcript every 30 s and saves feedback at the end. Without Supabase, history is stored in `localStorage` (up to 15 sessions).
-
----
-
-## ☁️ Deployment
-
-- **Frontend → Vercel.** Import the repo, add all env vars. Set `NEXT_PUBLIC_WS_URL` to your deployed server URL (e.g. `wss://your-app.up.railway.app`).
-- **WebSocket server → Railway** (or Render/Fly). Start command: `npm run server`. Add the same server-side keys. Railway provides `$PORT` — set `WS_PORT=$PORT` (or map it in Railway's settings). The HTTP `/health` route is provided for health checks.
-
----
-
-## 🎨 Design notes
-
-- **Accent = electric amber** (`#F59E0B`) on cream `#FAFAF8` / ink `#111`. Single CSS variable (`--accent` in `app/globals.css`) — change two lines to switch the whole app.
-- **Fonts:** Playfair Display (editorial display) + DM Sans (body), via `next/font`.
-- **Avatar:** self-contained Three.js bust — no external GLB download, works offline. `components/avatar/avatarLoader.ts` has a `loadAvatar(url)` upgrade path for ReadyPlayerMe GLBs (requires blendshapes/visemes for lip sync).
-- **Models:** brain & feedback → `claude-opus-4-8`; vision → `claude-haiku-4-5` (3-second cadence). Constants in `lib/claude.ts`.
-
----
-
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| "Couldn't reach the realtime server" | WS server isn't running, or `NEXT_PUBLIC_WS_URL`/`WS_PORT` mismatch. Run `npm run dev:ws`. |
-| `EADDRINUSE :3002` | Port taken — change `WS_PORT` and `NEXT_PUBLIC_WS_URL` in `.env.local`. |
-| "Missing API keys" error overlay | Fill all three keys at `/keys` (Anthropic, ElevenLabs, Deepgram) or in `.env.local`, then restart the WS server. |
-| No avatar voice on `/welcome` | Audio was blocked before the user gesture. Go back to `/keys` and hit Save again — that click unlocks the audio context. |
-| No avatar voice in interview | Browser blocked autoplay — click once anywhere in the room to unlock. |
-| Camera/mic blocked | Allow permissions in the browser, then hit Retry on the mic check. |
-| Preview without keys | Landing, setup, and `/feedback` (sample report) all work without any keys. |
-
----
-
-## 📜 Scripts
-
-```bash
-npm run dev        # app + ws server together
-npm run dev:web    # Next.js only
-npm run dev:ws     # WebSocket server only (watch mode)
-npm run build      # production build
-npm run start      # serve the production build
-npm run server     # run the WS server (production)
-npm run typecheck  # type-check app + server
-```
-
----
-
-Built like it's shipping tomorrow.
+| "You need a valid invite" | Open the full invite link on that device. Links stop working if paused, rotated, deleted, expired, or if `APP_SECRET` changed. |
+| Friend's link won't open | It points at `localhost`. Create invites from your tunnel or deployed URL (see *Sharing*). |
+| Microphone blocked | Allow it in the address bar and reload — or choose **Type** in practice settings. Mics require https or localhost. |
+| No interviewer voice | Check `ELEVENLABS_API_KEY`, unmute the tab, or turn off "Interviewer speaks out loud" for captions only. |
+| It replies too soon / too slowly | Tune `TURN_SETTLE_MS` (default 3500). |
+| Admin console locked | Set `ADMIN_PASSCODE` in `.env.local` and restart. |

@@ -41,3 +41,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# access registry + generated secret (never commit)
+/.data/

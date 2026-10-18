@@ -1,253 +1,472 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { motion, useInView } from "framer-motion";
-import { ArrowUpRight, Eye, AudioLines, Gauge, Quote, Clock, BarChart2 } from "lucide-react";
-import { Reveal, EASE } from "@/components/ui/Reveal";
-import { LoadingLink } from "@/components/ui/LoadingLink";
-import { loadHistory, type HistoryEntry } from "@/lib/persistence";
-import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { motion, useScroll, useTransform } from "motion/react";
+import {
+  ArrowRight,
+  AudioLines,
+  BookOpenCheck,
+  Brain,
+  Ear,
+  HandHeart,
+  KeyRound,
+  Languages,
+  Lightbulb,
+  Lock,
+  MessageSquareText,
+  Mic,
+  Pause,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from "lucide-react";
+import { AuraOrb, type AuraMood } from "@/components/aura/AuraOrb";
+import { Badge, Button, Eyebrow, Input, Logo, Modal } from "@/components/ui/kit";
+import { getPass } from "@/lib/client/api";
+import { cn } from "@/lib/cn";
 
-/* ─────────────────────── Reusable motion primitives ─────────────────────── */
+const EASE = [0.16, 1, 0.3, 1] as const;
 
-/** A live equalizer — the app's "I'm listening" signature, used in the orb. */
-function Waveform({ bars = 7, className }: { bars?: number; className?: string }) {
-  // A <span> (not <div>) so it's valid inside the eyebrow <p> — avoids the
-  // browser hoisting it out and breaking hydration.
-  return (
-    <span className={cn("inline-flex items-end gap-[3px]", className)}>
-      {Array.from({ length: bars }).map((_, i) => (
-        <motion.span
-          key={i}
-          className="block w-[3px] rounded-full bg-accent"
-          animate={{ height: [7, 22, 11, 26, 9, 18, 7] }}
-          transition={{
-            duration: 1.3 + (i % 3) * 0.22,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: i * 0.09,
-          }}
-        />
-      ))}
-    </span>
-  );
-}
-
-/** Slow-drifting amber light behind everything — sets an atmosphere. */
-function AmbientBackground() {
-  const blobs = [
-    { cls: "left-[-12%] top-[-8%] h-[540px] w-[540px]", c: "rgba(245,158,11,0.18)", dur: 22, x: [0, 50, 0], y: [0, 34, 0] },
-    { cls: "right-[-10%] top-[14%] h-[480px] w-[480px]", c: "rgba(180,83,9,0.13)", dur: 28, x: [0, -36, 0], y: [0, 46, 0] },
-    { cls: "left-[28%] bottom-[-16%] h-[600px] w-[600px]", c: "rgba(245,158,11,0.10)", dur: 34, x: [0, 26, 0], y: [0, -34, 0] },
-  ];
-  return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {blobs.map((b, i) => (
-        <motion.div
-          key={i}
-          className={cn("absolute rounded-full blur-3xl", b.cls)}
-          style={{ background: `radial-gradient(circle, ${b.c}, transparent 70%)` }}
-          animate={{ x: b.x, y: b.y, scale: [1, 1.12, 1] }}
-          transition={{ duration: b.dur, repeat: Infinity, ease: "easeInOut" }}
-        />
-      ))}
-    </div>
-  );
-}
-
-/** Deterministic motes that rise through the hero (no SSR randomness). */
-const PARTICLES = [
-  { l: "8%", s: 4, dur: 15, d: 0 }, { l: "21%", s: 3, dur: 19, d: 3 },
-  { l: "34%", s: 5, dur: 13, d: 6 }, { l: "47%", s: 3, dur: 21, d: 1.5 },
-  { l: "60%", s: 4, dur: 16, d: 4.5 }, { l: "72%", s: 3, dur: 23, d: 2 },
-  { l: "84%", s: 5, dur: 14, d: 7 }, { l: "92%", s: 3, dur: 18, d: 5 },
+/** A scripted snippet of a real-feeling exchange, cycling under the hero orb. */
+const SCRIPT: { who: "ai" | "you"; text: string; mood: AuraMood }[] = [
+  { who: "ai", text: "Tell me about a time a project went sideways. What did you do?", mood: "speaking" },
+  { who: "you", text: "Our launch slipped two weeks because the payments API changed, so I…", mood: "listening" },
+  { who: "ai", text: "", mood: "thinking" },
+  { who: "ai", text: "Interesting — you said “I”. What exactly did you own, and what was the result?", mood: "speaking" },
 ];
-function FloatingParticles() {
+
+export default function Landing() {
+  const [hasPass, setHasPass] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  useEffect(() => setHasPass(!!getPass()), []);
+
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-      {PARTICLES.map((p, i) => (
-        <motion.span
-          key={i}
-          className="absolute rounded-full bg-accent/40"
-          style={{ left: p.l, bottom: -12, width: p.s, height: p.s }}
-          animate={{ y: [0, -560], opacity: [0, 0.7, 0] }}
-          transition={{ duration: p.dur, repeat: Infinity, ease: "linear", delay: p.d }}
-        />
-      ))}
-    </div>
+    <main className="relative overflow-x-clip">
+      <Nav hasPass={hasPass} onInvite={() => setInviteOpen(true)} />
+      <Hero hasPass={hasPass} onInvite={() => setInviteOpen(true)} />
+      <Loop />
+      <Formats />
+      <Nerves />
+      <Privacy />
+      <FinalCta hasPass={hasPass} onInvite={() => setInviteOpen(true)} />
+      <footer className="relative border-t hairline px-6 py-10 text-center text-xs text-faint">
+        InterviewIQ · invite-only · your practice data never leaves your device
+      </footer>
+      <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
+    </main>
   );
 }
 
-/** The hero centrepiece — a living "interviewer is listening" orb. */
-function LiveOrb() {
+/* ───────────────────────────── Nav ───────────────────────────── */
+
+function Nav({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void }) {
   return (
-    <div className="relative h-[280px] w-[280px]">
-      {/* glow */}
-      <motion.div
-        className="absolute inset-0 rounded-full blur-2xl"
-        style={{ background: "radial-gradient(circle, rgba(245,158,11,0.32), transparent 70%)" }}
-        animate={{ scale: [1, 1.08, 1], opacity: [0.55, 0.9, 0.55] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-      />
-      {/* expanding pulse rings */}
-      {[0, 1, 2].map((i) => (
-        <motion.div
-          key={i}
-          className="absolute inset-7 rounded-full border border-accent/40"
-          animate={{ scale: [1, 1.55], opacity: [0.5, 0] }}
-          transition={{ duration: 3.2, repeat: Infinity, ease: "easeOut", delay: i * 1.05 }}
-        />
-      ))}
-      {/* counter-rotating scanner rings */}
-      <motion.svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full"
-        animate={{ rotate: 360 }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }}>
-        <circle cx="50" cy="50" r="47" fill="none" stroke="var(--accent)" strokeOpacity="0.4" strokeWidth="0.5" strokeDasharray="2 6" />
-      </motion.svg>
-      <motion.svg viewBox="0 0 100 100" className="absolute inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)]"
-        animate={{ rotate: -360 }} transition={{ duration: 30, repeat: Infinity, ease: "linear" }}>
-        <circle cx="50" cy="50" r="45" fill="none" stroke="#111" strokeOpacity="0.08" strokeWidth="0.5" strokeDasharray="1 9" />
-      </motion.svg>
-      {/* orbiting spark */}
-      <motion.div className="absolute inset-0" animate={{ rotate: 360 }}
-        transition={{ duration: 8, repeat: Infinity, ease: "linear" }}>
-        <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-accent"
-          style={{ boxShadow: "0 0 14px var(--accent)" }} />
-      </motion.div>
-      {/* core */}
-      <div className="absolute inset-[27%] flex items-center justify-center rounded-full border border-line bg-paper shadow-lift">
-        <Waveform bars={7} />
+    <header className="fixed inset-x-0 top-0 z-40">
+      <div className="mx-auto mt-4 flex max-w-6xl items-center justify-between rounded-2xl border border-white/[0.06] bg-ink-900/55 px-4 py-2.5 backdrop-blur-xl sm:px-5">
+        <Logo />
+        <div className="flex items-center gap-2">
+          <Badge tone="ember" className="hidden sm:inline-flex">
+            <Lock className="h-3 w-3" /> Invite only
+          </Badge>
+          {hasPass ? (
+            <Button href="/home" size="sm">
+              Open app <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={onInvite}>
+              <KeyRound className="h-3.5 w-3.5" /> I have an invite
+            </Button>
+          )}
+        </div>
       </div>
-      {/* status chip */}
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1, duration: 0.6 }}
-        className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-line bg-paper/90 px-3.5 py-1.5 text-xs font-medium text-ink-soft shadow-soft backdrop-blur"
-      >
-        <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" />
-        Listening · watching · adapting
-      </motion.div>
-    </div>
+    </header>
   );
 }
 
-/* ───────────────────────────── Hero headline ────────────────────────────── */
+/* ───────────────────────────── Hero ───────────────────────────── */
 
-const HERO_LINES = [
-  [{ t: "An interview that" }],
-  [{ t: "sees you", accent: true }, { t: ", hears you," }],
-  [{ t: "and pushes back." }],
-];
+function Hero({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void }) {
+  const ref = useRef<HTMLElement | null>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
+  const orbY = useTransform(scrollYProgress, [0, 1], [0, 160]);
+  const orbScale = useTransform(scrollYProgress, [0, 1], [1, 0.82]);
+  const textY = useTransform(scrollYProgress, [0, 1], [0, -60]);
+  const fade = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
 
-function HeroHeadline() {
+  const [step, setStep] = useState(0);
+  const [typed, setTyped] = useState("");
+  const line = SCRIPT[step];
+
+  // Typewriter for the scripted exchange.
+  useEffect(() => {
+    let i = 0;
+    setTyped("");
+    if (!line.text) {
+      const t = setTimeout(() => setStep((s) => (s + 1) % SCRIPT.length), 1500);
+      return () => clearTimeout(t);
+    }
+    const speed = line.who === "ai" ? 32 : 26;
+    const iv = setInterval(() => {
+      i++;
+      setTyped(line.text.slice(0, i));
+      if (i >= line.text.length) {
+        clearInterval(iv);
+        setTimeout(() => setStep((s) => (s + 1) % SCRIPT.length), 2200);
+      }
+    }, speed);
+    return () => clearInterval(iv);
+  }, [step, line.text, line.who]);
+
+  // A synthetic "voice" level so the orb breathes while the scripted line types.
+  const levelRef = useRef(0);
+  const getLevel = () => {
+    const talking = typed.length < line.text.length && line.text.length > 0;
+    const t = performance.now() / 1000;
+    const target = talking
+      ? (line.who === "ai" ? 0.55 : 0.3) * (0.55 + 0.45 * Math.abs(Math.sin(t * 7.3) * Math.sin(t * 3.1)))
+      : 0.04;
+    levelRef.current += (target - levelRef.current) * 0.25;
+    return levelRef.current;
+  };
+
   return (
-    <h1 className="display text-[clamp(2.6rem,8.5vw,7.5rem)] font-semibold text-ink">
-      {HERO_LINES.map((line, i) => (
-        <span key={i} className="block overflow-hidden">
-          <motion.span
-            className="block"
-            initial={{ y: "110%" }}
-            animate={{ y: 0 }}
-            transition={{ duration: 1, ease: EASE, delay: 0.15 + i * 0.12 }}
+    <section ref={ref} className="relative min-h-[100svh] pt-28">
+      {/* atmosphere */}
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute left-1/2 top-[38%] h-[900px] w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,138,76,0.16),transparent_60%)] blur-2xl" />
+        <div className="absolute inset-0 dot-grid mask-fade-b opacity-60" />
+      </div>
+
+      <div className="mx-auto grid max-w-6xl items-center gap-6 px-6 lg:grid-cols-[1.05fr_1fr]">
+        <motion.div style={{ y: textY, opacity: fade }} className="relative z-10 pt-8 lg:pt-0">
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: EASE }}
           >
-            {line.map((seg, j) => (
-              <span
-                key={j}
-                className={seg.accent ? "italic accent-underline" : undefined}
-                style={seg.accent ? { color: "var(--accent-ink)" } : undefined}
+            <Badge tone="neutral" className="mb-7">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-good opacity-70" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-good" />
+              </span>
+              A live interviewer that actually listens
+            </Badge>
+          </motion.div>
+          <h1 className="display text-[clamp(3.4rem,8.4vw,7.2rem)]">
+            {["Walk", "in"].map((w, i) => (
+              <motion.span
+                key={w}
+                className="mr-[0.22em] inline-block"
+                initial={{ opacity: 0, y: 40, filter: "blur(10px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                transition={{ duration: 1, delay: 0.1 + i * 0.08, ease: EASE }}
               >
-                {seg.t}
-              </span>
+                {w}
+              </motion.span>
             ))}
-          </motion.span>
-        </span>
-      ))}
-    </h1>
-  );
-}
+            <br />
+            <motion.span
+              className="text-ember-grad inline-block pr-2 italic"
+              initial={{ opacity: 0, y: 40, filter: "blur(12px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              transition={{ duration: 1.1, delay: 0.3, ease: EASE }}
+            >
+              ready.
+            </motion.span>
+          </h1>
+          <motion.p
+            className="mt-7 max-w-[30rem] text-[17px] leading-relaxed text-paper-dim"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.5, ease: EASE }}
+          >
+            Practice out loud with an AI interviewer who reads your resume, adapts to every answer, and
+            then shows you — line by line — how to say it better next time.
+          </motion.p>
+          <motion.div
+            className="mt-9 flex flex-wrap items-center gap-3"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.62, ease: EASE }}
+          >
+            {hasPass ? (
+              <Button href="/home" variant="glow" size="lg">
+                Continue practicing <ArrowRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button variant="glow" size="lg" onClick={onInvite}>
+                Use my invite <ArrowRight className="h-4 w-4" />
+              </Button>
+            )}
+            <span className="text-sm text-faint">No sign-up. No credit card. Just your link.</span>
+          </motion.div>
+        </motion.div>
 
-/* ─────────────────────────────── Marquee ────────────────────────────────── */
+        <motion.div style={{ y: orbY, scale: orbScale }} className="relative -mt-6 aspect-square w-full lg:-mr-16 lg:mt-0">
+          <motion.div
+            className="absolute inset-0"
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1.6, ease: EASE }}
+          >
+            <AuraOrb mood={line.mood} getLevel={getLevel} energy={0.45} scale={1.05} interactive className="h-full w-full" />
+          </motion.div>
 
-const MARQUEE = [
-  "Real-time voice",
-  "Live vision",
-  "Adaptive difficulty",
-  "Resume-aware",
-  "Honest feedback",
-  "No script",
-];
-
-function Marquee() {
-  return (
-    <div className="relative flex overflow-hidden border-y border-line bg-paper py-5 select-none">
-      <div className="flex shrink-0 animate-marquee whitespace-nowrap">
-        {[0, 1].map((dup) => (
-          <div key={dup} className="flex items-center" aria-hidden={dup === 1}>
-            {MARQUEE.map((w) => (
-              <span key={w} className="flex items-center">
-                <span className="px-8 text-lg font-medium tracking-tight text-ink-soft">
-                  {w}
-                </span>
-                <span className="text-accent">✦</span>
-              </span>
-            ))}
+          {/* live caption */}
+          <div className="absolute inset-x-6 bottom-[6%] flex justify-center sm:inset-x-14">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: EASE }}
+              className="glass w-full max-w-md rounded-2xl px-4 py-3"
+            >
+              <div className="mb-1.5 flex items-center gap-2">
+                {line.who === "ai" ? (
+                  <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-ember-soft">
+                    <AudioLines className="h-3 w-3" /> Maya · Hiring manager
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-tide">
+                    <Mic className="h-3 w-3" /> You
+                  </span>
+                )}
+              </div>
+              <p className="min-h-[2.8em] text-[14.5px] leading-snug text-paper">
+                {line.text ? (
+                  <>
+                    {typed}
+                    <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse bg-paper/70" />
+                  </>
+                ) : (
+                  <span className="shimmer-text">thinking about your answer…</span>
+                )}
+              </p>
+            </motion.div>
           </div>
+        </motion.div>
+      </div>
+
+      <div className="mx-auto mt-10 grid max-w-6xl grid-cols-2 gap-px overflow-hidden rounded-2xl border hairline bg-white/[0.06] px-0 sm:grid-cols-4 lg:mt-4">
+        {[
+          { k: "Speaks", v: "Natural voice, in real time" },
+          { k: "Listens", v: "Waits until you're done" },
+          { k: "Adapts", v: "Follow-ups from your answers" },
+          { k: "Coaches", v: "Rewrites your weak answers" },
+        ].map((s, i) => (
+          <motion.div
+            key={s.k}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.9 + i * 0.08, duration: 0.8 }}
+            className="bg-ink-900 px-5 py-4"
+          >
+            <p className="text-sm font-semibold">{s.k}</p>
+            <p className="mt-0.5 text-[13px] text-mute">{s.v}</p>
+          </motion.div>
         ))}
       </div>
+    </section>
+  );
+}
+
+/* ───────────────────────────── The loop ───────────────────────────── */
+
+function Reveal({ children, delay = 0, className }: { children: React.ReactNode; delay?: number; className?: string }) {
+  return (
+    <motion.div
+      className={className}
+      initial={{ opacity: 0, y: 28 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.9, delay, ease: EASE }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function SectionHead({ eyebrow, title, body }: { eyebrow: string; title: React.ReactNode; body?: string }) {
+  return (
+    <Reveal className="mx-auto max-w-2xl text-center">
+      <Eyebrow>{eyebrow}</Eyebrow>
+      <h2 className="display mt-4 text-[clamp(2.4rem,5vw,4rem)]">{title}</h2>
+      {body && <p className="mx-auto mt-5 max-w-xl text-[16px] leading-relaxed text-mute">{body}</p>}
+    </Reveal>
+  );
+}
+
+function Loop() {
+  return (
+    <section className="relative px-6 py-32">
+      <SectionHead
+        eyebrow="Prepare · Practice · Improve"
+        title={
+          <>
+            A coach for the <span className="italic text-ember-grad">whole</span> journey
+          </>
+        }
+        body="Most people practice by reading questions in their head. Interviews are spoken. InterviewIQ makes you say it out loud — then makes it better."
+      />
+      <div className="mx-auto mt-16 grid max-w-6xl gap-5 lg:grid-cols-3">
+        <Reveal delay={0}>
+          <LoopCard
+            n="01"
+            icon={<BookOpenCheck className="h-4 w-4" />}
+            title="Prepare"
+            body="Paste a job post. Get the questions they'll likely ask, the stories from your resume that answer them, and the gaps to get ahead of."
+          >
+            <div className="space-y-2">
+              {["Why do you want to work on payments?", "Walk me through a hard trade-off.", "What would your first 90 days look like?"].map(
+                (q, i) => (
+                  <div key={q} className="flex items-start gap-2.5 rounded-xl bg-white/[0.035] px-3 py-2.5 text-[13px]">
+                    <span className="mt-0.5 font-mono text-[11px] text-ember-soft">Q{i + 1}</span>
+                    <span className="text-paper-dim">{q}</span>
+                  </div>
+                )
+              )}
+            </div>
+          </LoopCard>
+        </Reveal>
+        <Reveal delay={0.1}>
+          <LoopCard
+            n="02"
+            icon={<AudioLines className="h-4 w-4" />}
+            title="Practice"
+            body="A real-time voice interview that digs into what you actually said. Stuck? Ask for a private hint, repeat the question, or pause."
+          >
+            <div className="flex items-end justify-center gap-[5px] py-4">
+              {Array.from({ length: 28 }).map((_, i) => (
+                <motion.span
+                  key={i}
+                  className="w-[4px] rounded-full bg-gradient-to-t from-ember to-gold"
+                  animate={{ height: [8, 14 + ((i * 37) % 38), 10, 20 + ((i * 53) % 30), 8] }}
+                  transition={{ duration: 1.6 + (i % 4) * 0.2, repeat: Infinity, ease: "easeInOut", delay: i * 0.04 }}
+                />
+              ))}
+            </div>
+          </LoopCard>
+        </Reveal>
+        <Reveal delay={0.2}>
+          <LoopCard
+            n="03"
+            icon={<TrendingUp className="h-4 w-4" />}
+            title="Improve"
+            body="An honest report: scores for five skills, what worked, what to fix, and a stronger version of each answer — in your own voice."
+          >
+            <div className="flex items-center gap-4">
+              <ScoreRingMini value={78} />
+              <div className="flex-1 space-y-2">
+                {[
+                  ["Structure", 84],
+                  ["Depth", 66],
+                  ["Confidence", 79],
+                ].map(([k, v]) => (
+                  <div key={k as string}>
+                    <div className="mb-1 flex justify-between text-[11.5px] text-mute">
+                      <span>{k}</span>
+                      <span className="text-paper-dim">{v}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-ember/15">
+                      <motion.div
+                        className="h-full rounded-full bg-ember"
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${v}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 1.4, ease: EASE, delay: 0.3 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </LoopCard>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function LoopCard({
+  n,
+  icon,
+  title,
+  body,
+  children,
+}: {
+  n: string;
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="glass group relative h-full overflow-hidden rounded-xl3 p-6 transition-transform duration-500 hover:-translate-y-1">
+      <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-ember/10 opacity-0 blur-3xl transition-opacity duration-700 group-hover:opacity-100" />
+      <div className="flex items-center justify-between">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-ember/12 text-ember-soft">{icon}</span>
+        <span className="font-mono text-xs text-faint">{n}</span>
+      </div>
+      <h3 className="mt-5 text-xl font-semibold tracking-tight">{title}</h3>
+      <p className="mt-2 text-[14.5px] leading-relaxed text-mute">{body}</p>
+      <div className="mt-6 rounded-2xl border hairline bg-ink-900/60 p-4">{children}</div>
     </div>
   );
 }
 
-/* ────────────────────────────── Stats band ──────────────────────────────── */
+function ScoreRingMini({ value }: { value: number }) {
+  const r = 30;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="relative h-20 w-20 shrink-0">
+      <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
+        <circle cx="40" cy="40" r={r} stroke="rgba(255,138,76,0.15)" strokeWidth="6" fill="none" />
+        <motion.circle
+          cx="40"
+          cy="40"
+          r={r}
+          stroke="#ff8a4c"
+          strokeWidth="6"
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={c}
+          initial={{ strokeDashoffset: c }}
+          whileInView={{ strokeDashoffset: c * (1 - value / 100) }}
+          viewport={{ once: true }}
+          transition={{ duration: 1.6, ease: EASE }}
+        />
+      </svg>
+      <span className="absolute inset-0 grid place-items-center text-xl font-semibold">{value}</span>
+    </div>
+  );
+}
 
-const STATS: { value: number; suffix?: string; display?: string; label: string }[] = [
-  { value: 5, label: "Dimensions scored" },
-  { value: 4, label: "Difficulty levels" },
-  { value: 30, suffix: " min", label: "Up to, per session" },
-  { value: 0, display: "∞", label: "Free practice runs" },
+/* ───────────────────────────── Formats ───────────────────────────── */
+
+const FORMATS = [
+  { icon: Target, t: "Full mock interview", d: "Start to finish, tailored to the job post." },
+  { icon: Sparkles, t: "Five-minute drill", d: "Three sharp questions when you're short on time." },
+  { icon: MessageSquareText, t: "STAR stories", d: "Turn your experience into answers that land." },
+  { icon: Brain, t: "Technical deep-dive", d: "Trade-offs, depth and how you think." },
+  { icon: AudioLines, t: "Tell me about yourself", d: "Nail the first ninety seconds." },
+  { icon: HandHeart, t: "Salary negotiation", d: "Rehearse asking for what you're worth." },
+  { icon: TrendingUp, t: "Fix my weak spot", d: "Targets your lowest-scoring skill." },
+  { icon: Lightbulb, t: "Any scenario", d: "Describe it, and rehearse it." },
 ];
 
-function Stat({ value, suffix, display, label }: (typeof STATS)[number]) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const inView = useInView(ref, { once: true, margin: "-60px" });
-  const [n, setN] = useState(0);
-
-  useEffect(() => {
-    if (!inView || display) return;
-    let raf = 0;
-    const start = performance.now();
-    const dur = 1200;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / dur);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setN(Math.round(eased * value));
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [inView, value, display]);
-
+function Formats() {
   return (
-    <div ref={ref} className="text-center">
-      <div className="display text-5xl font-semibold text-ink sm:text-6xl">
-        <span style={{ color: "var(--accent-ink)" }}>
-          {display ?? n}
-          {suffix}
-        </span>
-      </div>
-      <p className="mt-2 text-sm text-muted">{label}</p>
-    </div>
-  );
-}
-
-function StatsBand() {
-  return (
-    <section className="relative z-10 mx-auto max-w-7xl px-6 py-16 sm:px-10">
-      <div className="grid grid-cols-2 gap-10 md:grid-cols-4">
-        {STATS.map((s, i) => (
-          <Reveal key={s.label} delay={i * 0.08}>
-            <Stat {...s} />
+    <section className="relative px-6 py-24">
+      <SectionHead eyebrow="Eight ways to practice" title={<>Whatever's next, rehearse <span className="italic">that</span></>} />
+      <div className="mx-auto mt-14 grid max-w-6xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {FORMATS.map((f, i) => (
+          <Reveal key={f.t} delay={(i % 4) * 0.06}>
+            <div className="group relative h-full rounded-2xl border hairline bg-white/[0.02] p-5 transition-colors duration-300 hover:border-ember/30 hover:bg-ember/[0.04]">
+              <f.icon className="h-5 w-5 text-mute transition-colors group-hover:text-ember-soft" />
+              <p className="mt-4 font-medium">{f.t}</p>
+              <p className="mt-1 text-[13.5px] leading-snug text-mute">{f.d}</p>
+            </div>
           </Reveal>
         ))}
       </div>
@@ -255,307 +474,145 @@ function StatsBand() {
   );
 }
 
-/* ─────────────────────────── How it works ───────────────────────────────── */
+/* ───────────────────────────── Nerves ───────────────────────────── */
 
-const STEPS = [
-  {
-    n: "01",
-    title: "Bring your story",
-    body: "Drop in your resume, cover letter and the job description. The interviewer reads everything before you sit down.",
-  },
-  {
-    n: "02",
-    title: "Sit the interview",
-    body: "An animated interviewer speaks, listens to your answers and watches your camera — adapting every question in real time.",
-  },
-  {
-    n: "03",
-    title: "Hear the truth",
-    body: "The moment it ends, you get a scored, dimension-by-dimension breakdown and three things to fix. No flattery.",
-  },
-];
-
-/* ─────────────────────────── Capabilities ───────────────────────────────── */
-
-const CAPS = [
-  {
-    icon: AudioLines,
-    title: "It listens",
-    body: "Streaming speech recognition means you just talk. No buttons, no “submit.” It hears you finish and responds.",
-    anim: { scaleY: [1, 1.35, 0.8, 1] },
-  },
-  {
-    icon: Eye,
-    title: "It watches",
-    body: "Every few seconds it reads your eye contact, posture and expression — and lets what it sees shape what it asks next.",
-    anim: { scale: [1, 1.15, 1], rotate: [0, -6, 6, 0] },
-  },
-  {
-    icon: Gauge,
-    title: "It adapts",
-    body: "Three strong answers and it turns up the heat. A shaky one and it probes deeper. Difficulty is never fixed.",
-    anim: { rotate: [-8, 8, -8] },
-  },
-];
-
-/* ──────────────────────────── History strip ─────────────────────────────── */
-
-const GRADE_COLOR: Record<string, string> = {
-  "A+": "#22c55e", A: "#22c55e", "A-": "#4ade80",
-  "B+": "#84cc16", B: "#84cc16", "B-": "#a3e635",
-  "C+": "#eab308", C: "#eab308", "C-": "#facc15",
-  D: "#f97316", F: "#ef4444",
-};
-
-function HistoryStrip({ entries }: { entries: HistoryEntry[] }) {
-  if (!entries.length) return null;
+function Nerves() {
+  const items = [
+    { icon: HandHeart, t: "Gentle mode", d: "A patient interviewer who builds you up first." },
+    { icon: Lightbulb, t: "Private hints", d: "A whisper from your coach, mid-answer. Only you see it." },
+    { icon: Pause, t: "Pause anytime", d: "Take a breath. The clock stops with you." },
+    { icon: Ear, t: "It waits for you", d: "No interrupting. It knows when you've finished." },
+    { icon: MessageSquareText, t: "Type instead", d: "No mic, shared room, or just not ready to speak? Type." },
+    { icon: Languages, t: "Your language", d: "English, Hinglish, Hindi, Spanish, French, German, Portuguese." },
+  ];
   return (
-    <Reveal className="relative z-10 mx-auto max-w-7xl px-6 pb-2 sm:px-10">
-      <div className="flex items-center gap-3 overflow-x-auto pb-1">
-        <span className="shrink-0 text-xs font-medium uppercase tracking-widest text-muted">
-          Your sessions
-        </span>
-        {entries.map((e) => (
-          <Link
-            key={e.id}
-            href="/feedback"
-            className="group flex shrink-0 items-center gap-3 rounded-full border border-line bg-paper px-4 py-2 text-sm transition-all hover:-translate-y-0.5 hover:border-ink/30 hover:shadow-soft"
-          >
-            <span className="font-semibold" style={{ color: GRADE_COLOR[e.grade] ?? "#888" }}>
-              {e.grade}
-            </span>
-            <span className="text-ink-soft">{e.score}/100</span>
-            <span className="flex items-center gap-1 text-muted">
-              <Clock className="h-3 w-3" />
-              {new Date(e.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-            </span>
-          </Link>
-        ))}
-        <LoadingLink
-          href="/keys"
-          loadingLabel="Loading…"
-          spinnerClassName="h-3.5 w-3.5"
-          className="shrink-0 flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-xs font-medium text-cream transition-transform hover:-translate-y-0.5"
-        >
-          <BarChart2 className="h-3.5 w-3.5" /> Practice again
-        </LoadingLink>
+    <section className="relative px-6 py-28">
+      <div className="mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[1fr_1.1fr]">
+        <Reveal>
+          <Eyebrow>Built for nerves</Eyebrow>
+          <h2 className="display mt-4 text-[clamp(2.4rem,5vw,4rem)]">
+            Practice where it's <span className="italic text-ember-grad">safe</span> to stumble.
+          </h2>
+          <p className="mt-5 max-w-md text-[16px] leading-relaxed text-mute">
+            Interviews are stressful enough. Here you can freeze, restart, ask for help and try again — as many times as
+            you need — until the real one feels familiar.
+          </p>
+          <div className="mt-10 flex items-center gap-5">
+            <div className="relative grid h-24 w-24 place-items-center">
+              <span className="absolute inset-0 rounded-full bg-tide/15 animate-breathe" />
+              <span className="absolute inset-4 rounded-full bg-tide/25 animate-breathe [animation-delay:0.4s]" />
+              <span className="relative text-xs text-tide">breathe</span>
+            </div>
+            <p className="max-w-[16rem] text-sm text-mute">Every session starts with an optional 30-second reset.</p>
+          </div>
+        </Reveal>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {items.map((it, i) => (
+            <Reveal key={it.t} delay={i * 0.05}>
+              <div className="glass h-full rounded-2xl p-5">
+                <it.icon className="h-5 w-5 text-tide" />
+                <p className="mt-3 font-medium">{it.t}</p>
+                <p className="mt-1 text-[13.5px] leading-snug text-mute">{it.d}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
       </div>
-    </Reveal>
+    </section>
   );
 }
 
-/* ──────────────────────────────── Page ──────────────────────────────────── */
+/* ───────────────────────────── Privacy ───────────────────────────── */
 
-export default function LandingPage() {
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  // Mandatory flow: home → keys → intro → setup → interview. Every entry point
-  // goes through /keys (prefilled for returning users — one click to continue).
-  const startHref = "/keys";
+function Privacy() {
+  return (
+    <section className="px-6 py-20">
+      <Reveal className="glass mx-auto flex max-w-4xl flex-col items-center gap-6 rounded-xl3 p-10 text-center sm:flex-row sm:text-left">
+        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-good/10 text-good">
+          <Lock className="h-6 w-6" />
+        </span>
+        <div>
+          <h3 className="text-xl font-semibold tracking-tight">Your practice stays yours.</h3>
+          <p className="mt-2 text-[15px] leading-relaxed text-mute">
+            Your resume, transcripts and reports are saved only in this browser — there's no account and no database of
+            your answers. Camera analysis runs on your device; you can switch the camera off entirely.
+          </p>
+        </div>
+      </Reveal>
+    </section>
+  );
+}
 
-  useEffect(() => {
-    setHistory(loadHistory().slice(0, 5));
-  }, []);
+function FinalCta({ hasPass, onInvite }: { hasPass: boolean; onInvite: () => void }) {
+  return (
+    <section className="relative overflow-hidden px-6 pb-32 pt-16 text-center">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 opacity-70">
+        <AuraOrb mood="idle" energy={0.2} scale={0.9} className="h-full w-full" />
+      </div>
+      <Reveal className="relative">
+        <h2 className="display text-[clamp(2.6rem,6vw,5rem)]">
+          Your next interview
+          <br />
+          <span className="italic text-ember-grad">starts here.</span>
+        </h2>
+        <div className="mt-10 flex justify-center">
+          {hasPass ? (
+            <Button href="/home" variant="glow" size="lg">
+              Open InterviewIQ <ArrowRight className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button variant="glow" size="lg" onClick={onInvite}>
+              Use my invite <ArrowRight className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+/* ───────────────────────────── Invite modal ───────────────────────────── */
+
+function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter();
+  const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = value.trim();
+    const m = v.match(/\/join\/([A-Za-z0-9_\-.]+)/);
+    const token = m ? m[1] : v;
+    if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
+      setError("That doesn't look like an InterviewIQ invite link.");
+      return;
+    }
+    router.push(`/join/${token}`);
+  };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-cream grain">
-      <AmbientBackground />
-
-      {/* Nav */}
-      <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-6 sm:px-10">
-        <Link href="/" className="display text-xl font-semibold tracking-tight">
-          Interview<span style={{ color: "var(--accent-ink)" }}>IQ</span>
-        </Link>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6, duration: 0.8 }}
-          className="flex items-center gap-6"
-        >
-          <span className="hidden items-center gap-2 text-sm text-muted sm:flex">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
-            </span>
-            Live AI interviewer
-          </span>
-          <Link href="/keys" className="text-sm text-muted underline-offset-4 hover:text-ink hover:underline">
-            API keys
-          </Link>
-          <Link href={startHref} className="text-sm font-medium underline-offset-4 hover:underline">
-            Start →
-          </Link>
-        </motion.div>
-      </header>
-
-      {history.length > 0 && <HistoryStrip entries={history} />}
-
-      {/* Hero */}
-      <section className="relative z-10 mx-auto max-w-7xl px-6 pb-20 pt-10 sm:px-10 sm:pt-16">
-        <FloatingParticles />
-
-        {/* Floating orb visual (large screens) */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.5, duration: 1, ease: EASE }}
-          className="pointer-events-none absolute right-6 top-2 z-0 hidden xl:block"
-        >
-          <LiveOrb />
-        </motion.div>
-
-        <div className="relative z-10">
-          <Reveal onView={false} delay={0.05}>
-            <p className="eyebrow flex items-center gap-3 text-muted">
-              Real-time · Multimodal · Unscripted
-              <Waveform bars={4} className="h-4" />
-            </p>
-          </Reveal>
-
-          <div className="mt-6">
-            <HeroHeadline />
-          </div>
-
-          <div className="mt-10 grid gap-10 md:grid-cols-[1.1fr_0.9fr] md:items-end">
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7, duration: 0.9, ease: EASE }}
-              className="max-w-xl text-pretty text-lg leading-relaxed text-ink-soft"
-            >
-              InterviewIQ runs a live mock interview with an AI that speaks,
-              listens and watches — then tells you the truth about how you did.
-              Once it begins, you never touch the keyboard again.
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.85, duration: 0.9, ease: EASE }}
-              className="flex flex-col items-start gap-4 md:items-end"
-            >
-              <LoadingLink href={startHref} loadingLabel="Starting…" className="btn-primary group text-lg">
-                Start Interview
-                <ArrowUpRight className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-              </LoadingLink>
-              <p className="text-sm text-muted">10–30 min · Camera + mic · No sign-up</p>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      <Marquee />
-
-      <StatsBand />
-
-      {/* How it works */}
-      <section className="relative z-10 mx-auto max-w-7xl px-6 py-24 sm:px-10">
-        <Reveal>
-          <p className="eyebrow text-muted">How it works</p>
-          <h2 className="display mt-3 max-w-2xl text-4xl font-semibold sm:text-5xl">
-            Three steps. Then it’s out of your hands.
-          </h2>
-        </Reveal>
-
-        <div className="mt-16 grid gap-px overflow-hidden rounded-card border border-line bg-line md:grid-cols-3">
-          {STEPS.map((s, i) => (
-            <Reveal
-              key={s.n}
-              delay={i * 0.1}
-              className="group relative bg-cream p-8 transition-colors duration-300 hover:bg-paper sm:p-10"
-            >
-              <div className="display text-5xl font-semibold text-line transition-all duration-300 group-hover:scale-110 group-hover:text-accent">
-                {s.n}
-              </div>
-              <h3 className="mt-6 text-xl font-semibold">{s.title}</h3>
-              <p className="mt-3 leading-relaxed text-ink-soft">{s.body}</p>
-              <div className="mt-6 h-px w-0 bg-accent transition-all duration-500 group-hover:w-full" />
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* Pull quote */}
-      <section className="relative z-10 border-y border-line bg-paper">
-        <div className="mx-auto max-w-5xl px-6 py-24 text-center sm:px-10">
-          <Reveal>
-            <motion.div
-              animate={{ rotate: [0, -6, 6, 0], scale: [1, 1.08, 1] }}
-              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            >
-              <Quote className="mx-auto h-8 w-8 text-accent" />
-            </motion.div>
-            <blockquote className="display mt-8 text-balance text-3xl font-medium leading-tight sm:text-5xl">
-              “It’s not a chatbot with a face. It’s a room you walk into — and
-              the room is paying attention.”
-            </blockquote>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* Capabilities */}
-      <section className="relative z-10 mx-auto max-w-7xl px-6 py-24 sm:px-10">
-        <div className="grid gap-12 md:grid-cols-3">
-          {CAPS.map((c, i) => (
-            <Reveal key={c.title} delay={i * 0.1}>
-              <div className="group rounded-card p-6 transition-all duration-300 hover:-translate-y-1.5 hover:bg-paper hover:shadow-lift">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-paper text-ink transition-colors duration-300 group-hover:border-accent group-hover:bg-accent group-hover:text-cream">
-                  <motion.span
-                    animate={c.anim}
-                    transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut", delay: i * 0.3 }}
-                    className="inline-flex"
-                  >
-                    <c.icon className="h-5 w-5" />
-                  </motion.span>
-                </div>
-                <h3 className="mt-6 text-2xl font-semibold">{c.title}</h3>
-                <p className="mt-3 leading-relaxed text-ink-soft">{c.body}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="relative z-10 mx-auto max-w-7xl px-6 pb-28 sm:px-10">
-        <Reveal className="relative overflow-hidden rounded-card border border-line bg-ink px-8 py-16 text-cream sm:px-16 sm:py-20">
-          {/* drifting glow inside the dark panel */}
-          <motion.div
-            className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full blur-3xl"
-            style={{ background: "radial-gradient(circle, rgba(245,158,11,0.45), transparent 70%)" }}
-            animate={{ x: [0, -30, 0], y: [0, 24, 0], scale: [1, 1.15, 1] }}
-            transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-          />
-          <div className="relative grid gap-10 md:grid-cols-[1.2fr_0.8fr] md:items-center">
-            <h2 className="display text-4xl font-semibold leading-tight sm:text-6xl">
-              Ready when you are.
-            </h2>
-            <div className="flex flex-col items-start gap-4 md:items-end">
-              <p className="max-w-sm text-cream/70 md:text-right">
-                Set up takes a minute. The interview takes as long as you choose.
-                The feedback lasts.
-              </p>
-              <LoadingLink
-                href={startHref}
-                loadingLabel="Starting…"
-                className="group inline-flex items-center gap-2 rounded-full bg-cream px-7 py-4 text-lg font-medium text-ink transition-transform duration-300 hover:-translate-y-0.5"
-              >
-                Start Interview
-                <ArrowUpRight className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-              </LoadingLink>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-line">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-4 px-6 py-10 text-sm text-muted sm:flex-row sm:items-center sm:px-10">
-          <span className="display text-base font-semibold text-ink">
-            Interview<span style={{ color: "var(--accent-ink)" }}>IQ</span>
-          </span>
-          <span>Built for the moment before the moment.</span>
-        </div>
-      </footer>
-    </main>
+    <Modal open={open} onClose={onClose} title="Open your invite">
+      <p className="-mt-2 mb-5 text-sm text-mute">
+        InterviewIQ is invite-only. Paste the link you were sent — that's all you need.
+      </p>
+      <form onSubmit={submit} className="space-y-3">
+        <Input
+          autoFocus
+          placeholder="https://…/join/…"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError("");
+          }}
+        />
+        {error && <p className="text-sm text-bad">{error}</p>}
+        <Button type="submit" variant="glow" className={cn("w-full")}>
+          Continue <ArrowRight className="h-4 w-4" />
+        </Button>
+      </form>
+      <p className="mt-5 text-center text-xs text-faint">
+        Running your own copy? <a href="/admin" className="text-paper-dim underline-offset-4 hover:underline">Admin sign-in</a>
+      </p>
+    </Modal>
   );
 }

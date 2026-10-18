@@ -1,87 +1,85 @@
 /**
  * Shared domain + realtime-protocol types.
  *
- * This module is imported by BOTH the browser app (via the "@/types/interview"
- * alias) and the standalone WebSocket server (via a relative import). Keep it
- * free of any runtime browser/node-only code — only types and plain constants.
+ * Imported by BOTH the browser app (via "@/types/interview") and the Node
+ * server (via relative imports). Keep it free of runtime browser/node-only
+ * code — only types and plain constants.
  */
 
 /* ─────────────────────────── Interview configuration ────────────────────── */
 
-export type InterviewType = "behavioral" | "technical" | "mixed";
-export type Difficulty = "entry" | "mid" | "senior" | "brutal";
-export type Personality = "friendly" | "neutral" | "tough" | "silent";
-export type ClaudeModel = "haiku" | "sonnet" | "opus";
-/** Target duration, in minutes. */
-export type DurationMinutes = 10 | 20 | 30;
+/** What kind of practice the session is. Drives prompts, length and scoring. */
+export type PracticeFormat =
+  | "full" // full mock interview
+  | "drill" // 2–3 rapid questions, quick feedback
+  | "behavioral" // STAR coaching
+  | "technical" // technical deep-dive
+  | "pitch" // "tell me about yourself" / elevator pitch
+  | "salary" // salary & offer negotiation role-play
+  | "weakspot" // targets the user's weakest dimension
+  | "custom"; // free-form scenario
 
-/**
- * Interview mode determines what context the AI has and how it starts.
- * - standard   : resume + cover letter + full JD (classic)
- * - resume-only: only resume + job role name; AI infers the rest
- * - blind      : no context; AI discovers everything through conversation
- * - custom     : user writes a free-form prompt describing the interview
- */
-export type InterviewMode = "standard" | "resume-only" | "blind" | "custom";
+export type Difficulty = "gentle" | "standard" | "challenging" | "brutal";
+export type Persona = "warm" | "neutral" | "tough" | "silent";
+export type InputMode = "voice" | "text";
+export type AvatarStyle = "aura" | "human";
+export type Gender = "male" | "female";
+
+/** BCP-47-ish codes we support end-to-end (Deepgram STT + ElevenLabs Flash). */
+export type InterviewLanguage = "en" | "multi" | "hi" | "es" | "fr" | "de" | "pt";
+
+/** Target duration, in minutes. */
+export type DurationMinutes = 5 | 10 | 15 | 20 | 30;
+
+export interface InterviewContext {
+  /** Target role title, e.g. "Senior Product Designer". */
+  role: string;
+  company?: string;
+  jobDescription?: string;
+  resumeText?: string;
+  /** Extra notes, the custom scenario, or the weak spot to focus on. */
+  notes?: string;
+}
 
 export interface InterviewConfig {
-  type: InterviewType;
+  format: PracticeFormat;
   difficulty: Difficulty;
+  persona: Persona;
   duration: DurationMinutes;
-  personality: Personality;
-  mode: InterviewMode;
-  /** Free-form prompt used when mode === "custom". */
-  customPrompt?: string;
-  /** Short job role name used when mode === "resume-only". */
-  jobRole?: string;
-  /** When true, two interviewers conduct the session together. */
-  panelMode?: boolean;
-  /** Claude model used for brain + feedback. Defaults to sonnet. */
-  model?: ClaudeModel;
-}
-
-export interface InterviewDocuments {
-  resumeText: string;
-  coverLetterText: string;
-  jobDescription: string;
-}
-
-/** Per-session API keys (BYOK). Server uses env vars as fallback. */
-export interface SessionKeys {
-  anthropic?: string;
-  elevenlabs?: string;
-  deepgram?: string;
+  inputMode: InputMode;
+  /** Interviewer speaks out loud (TTS). Off = captions only. */
+  voiceOut: boolean;
+  /** Webcam on for presence analysis. */
+  camera: boolean;
+  language: InterviewLanguage;
+  avatar: AvatarStyle;
+  /** Two interviewers instead of one. */
+  panel: boolean;
+  /** Allow the private coach (hints) during the interview. */
+  coach: boolean;
 }
 
 export const DEFAULT_CONFIG: InterviewConfig = {
-  type: "mixed",
-  difficulty: "mid",
-  duration: 20,
-  personality: "neutral",
-  mode: "standard",
-  model: "sonnet",
+  format: "full",
+  difficulty: "standard",
+  persona: "warm",
+  duration: 15,
+  inputMode: "voice",
+  voiceOut: true,
+  camera: true,
+  language: "en",
+  avatar: "aura",
+  panel: false,
+  coach: true,
 };
 
 /* ──────────────────────────── Vision analysis ───────────────────────────── */
 
 export type EyeContact = "strong" | "moderate" | "weak" | "none";
 export type Posture = "confident" | "neutral" | "slouched" | "tense";
-export type Expression =
-  | "calm"
-  | "nervous"
-  | "confused"
-  | "engaged"
-  | "blank";
+export type Expression = "calm" | "nervous" | "confused" | "engaged" | "blank";
 export type Presentation = "professional" | "casual" | "unprofessional";
 export type Presence = "present" | "absent";
-export type Gesture =
-  | "none"
-  | "waving"
-  | "hand_raised"
-  | "touching_face"
-  | "looking_away"
-  | "on_phone"
-  | "shrugging";
 
 export interface VisionAnalysis {
   presence: Presence;
@@ -89,34 +87,18 @@ export interface VisionAnalysis {
   posture: Posture;
   expression: Expression;
   presentation: Presentation;
-  gesture: Gesture;
-  /** One brief observation, or null when nothing notable. */
   notes: string | null;
-  /** Server-stamped capture time (ms epoch). */
   ts?: number;
 }
 
-export type Gender = "male" | "female";
-
-/**
- * Real-time metrics computed in-browser by MediaPipe (the "model's perspective").
- * These are aggregated over the whole interview and sent to the server for the
- * final feedback — no images leave the device for these.
- */
+/** Real-time metrics computed in-browser by MediaPipe. No images leave the device. */
 export interface CvMetrics {
-  /** Frames analyzed locally. */
   frames: number;
-  /** % of frames a face was detected. */
   presentPct: number;
-  /** % of frames the candidate was looking at the camera. */
   eyeContactPct: number;
-  /** Blinks per minute. */
   blinksPerMin: number;
-  /** % of frames showing a smile. */
   smilePct: number;
-  /** 0-100 head steadiness (100 = very still, low fidgeting). */
   headSteadiness: number;
-  /** 0-100 composite engagement score. */
   engagement: number;
 }
 
@@ -128,218 +110,252 @@ export interface TranscriptTurn {
   role: SpeakerRole;
   text: string;
   ts: number;
+  /** Interviewer display name (panel mode). */
+  speaker?: string;
+  /** Seconds the candidate actually spoke in this turn (voice mode). */
+  speakingSec?: number;
+}
+
+/** Measured delivery stats, computed server-side from the transcript. */
+export interface DeliveryStats {
+  answers: number;
+  totalWords: number;
+  /** Words per minute while speaking (voice only). */
+  wpm: number | null;
+  avgAnswerWords: number;
+  fillerCount: number;
+  fillerPer100: number;
+  topFillers: { word: string; count: number }[];
+  hintsUsed: number;
 }
 
 /* ──────────────────────────────── Feedback ──────────────────────────────── */
 
-export type Grade =
-  | "A+"
-  | "A"
-  | "A-"
-  | "B+"
-  | "B"
-  | "B-"
-  | "C+"
-  | "C"
-  | "C-"
-  | "D"
-  | "F";
+export type Grade = "A+" | "A" | "A-" | "B+" | "B" | "B-" | "C+" | "C" | "C-" | "D" | "F";
+export type AnswerQuality = "strong" | "solid" | "weak" | "missed";
+export type HiringSignal = "strong_yes" | "yes" | "lean_yes" | "lean_no" | "no";
 
-export type AnswerQuality = "strong" | "weak" | "missed";
+export const DIMENSIONS = [
+  "communication",
+  "structure",
+  "relevance",
+  "depth",
+  "confidence",
+] as const;
+export type Dimension = (typeof DIMENSIONS)[number];
+export type DimensionScores = Record<Dimension, number>;
 
-export interface AnswerAnnotation {
+export const DIMENSION_LABELS: Record<Dimension, string> = {
+  communication: "Communication",
+  structure: "Structure",
+  relevance: "Relevance",
+  depth: "Depth",
+  confidence: "Confidence",
+};
+
+export interface AnswerReview {
   question: string;
   answer: string;
   quality: AnswerQuality;
-  annotation: string;
+  score: number;
+  whatWorked: string;
+  toImprove: string;
+  /** A rewritten, stronger version of the candidate's answer, in their voice. */
+  strongerAnswer: string;
 }
 
-export interface FeedbackDimensions {
-  communication: number;
-  technicalDepth: number;
-  confidence: number;
-  relevance: number;
-  structure: number;
-}
-
-export interface VisionReport {
-  eyeContactScore: number;
-  bodyLanguageSummary: string;
-  presentationNotes: string;
-  /** Raw live-tracking metrics from MediaPipe (shown alongside the narrative). */
-  liveMetrics?: CvMetrics;
+export interface Improvement {
+  title: string;
+  detail: string;
+  /** A concrete exercise for the next session. */
+  drill: string;
 }
 
 export interface InterviewFeedback {
   overallScore: number;
   grade: Grade;
-  dimensions: FeedbackDimensions;
-  answerAnnotations: AnswerAnnotation[];
-  visionReport: VisionReport;
-  topThreeImprovements: string[];
+  headline: string;
+  summary: string;
+  hiringSignal: HiringSignal;
+  hiringSignalReason: string;
+  dimensions: DimensionScores;
   strengths: string[];
-  overallSummary: string;
+  improvements: Improvement[];
+  answers: AnswerReview[];
+  presence: {
+    score: number | null;
+    summary: string;
+  };
+  nextSession: {
+    format: PracticeFormat;
+    focus: string;
+    why: string;
+  };
+  delivery?: DeliveryStats;
+  liveMetrics?: CvMetrics;
+}
+
+/* ─────────────────────────────── Prep packs ─────────────────────────────── */
+
+export interface PrepQuestion {
+  question: string;
+  category: string;
+  whyTheyAsk: string;
+  answerOutline: string[];
+  /** Which of the candidate's stories fits best. */
+  useStory?: string;
+}
+
+export interface PrepStory {
+  title: string;
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  goodFor: string[];
+}
+
+export interface PrepPack {
+  role: string;
+  company?: string;
+  snapshot: string;
+  whatTheyWant: string[];
+  yourEdge: string[];
+  gaps: { gap: string; howToAddress: string }[];
+  questions: PrepQuestion[];
+  stories: PrepStory[];
+  questionsToAsk: string[];
+  companyNotes?: string[];
+  dayOfChecklist: string[];
+}
+
+/* ─────────────────────────── Candidate profile ──────────────────────────── */
+
+export interface CandidateProfile {
+  name: string;
+  headline: string;
+  targetRole: string;
+  experienceLevel: "student" | "entry" | "mid" | "senior" | "lead" | "career-change";
+  resumeText: string;
+  resumeFileName?: string;
+  /** Short AI-extracted summary of the resume. */
+  summary?: string;
+  skills?: string[];
+  /** How the candidate feels about interviews (1 calm … 5 very anxious). */
+  nerves: number;
+  goals: string[];
+  preferredLanguage: InterviewLanguage;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/* ─────────────────────────────── Access ─────────────────────────────────── */
+
+export interface AccessInfo {
+  id: string;
+  name: string;
+  role: "admin" | "member";
+  limits: { minutesPerMonth: number | null; prepsPerMonth: number | null };
+  usage: { minutes: number; preps: number; sessions: number; costUsd: number };
 }
 
 /* ─────────────────────────── Realtime WS protocol ───────────────────────── */
 /**
- * Control messages are sent as JSON text frames. Audio (both directions) is
- * sent as raw BINARY frames for efficiency:
- *   • client → server binary  = microphone PCM (16-bit LE @ 16 kHz)
- *   • server → client binary  = ElevenLabs TTS PCM (16-bit LE @ 24 kHz)
+ * Control messages are JSON text frames. Audio is raw BINARY frames:
+ *   • client → server binary = microphone PCM (16-bit LE, native rate)
+ *   • server → client binary = ElevenLabs TTS PCM (16-bit LE @ 24 kHz)
  */
 
 export interface ClientStartMessage {
   type: "interview:start";
+  pass: string;
   sessionId: string;
-  resumeText: string;
-  coverLetterText: string;
-  jobDescription: string;
   config: InterviewConfig;
-  /** Actual microphone PCM sample rate (Hz), so STT gets clean, un-resampled audio. */
+  context: InterviewContext;
+  candidateName?: string;
   audioSampleRate?: number;
-  /** Per-session API keys (BYOK). Server env vars are used as fallback. */
-  apiKeys?: SessionKeys;
-}
-
-export interface ClientVisionMessage {
-  type: "vision:frame";
-  /** base64-encoded JPEG (no data: prefix). */
-  data: string;
-}
-
-/**
- * Client sends this when audio playback has actually finished on the speaker.
- * The server uses this (not `tts.done`) to arm the silence/settle timer.
- */
-export interface ClientPlaybackComplete {
-  type: "playback:complete";
-}
-
-/** Periodic aggregated CV metrics from the in-browser MediaPipe tracker. */
-export interface ClientCvMetrics {
-  type: "cv:metrics";
-  metrics: CvMetrics;
-}
-
-export interface ClientEndMessage {
-  type: "interview:end";
 }
 
 export type ClientMessage =
   | ClientStartMessage
-  | ClientVisionMessage
-  | ClientPlaybackComplete
-  | ClientCvMetrics
-  | ClientEndMessage;
+  | { type: "vision:frame"; data: string }
+  | { type: "playback:complete" }
+  | { type: "cv:metrics"; metrics: CvMetrics }
+  | { type: "candidate:text"; text: string }
+  | { type: "control:repeat" }
+  | { type: "control:hint" }
+  | { type: "control:skip" }
+  | { type: "control:pause" }
+  | { type: "control:resume" }
+  | { type: "interview:end" };
 
-export interface ServerSpeakingStart {
-  type: "avatar:speaking:start";
-}
-export interface ServerSpeakingEnd {
-  type: "avatar:speaking:end";
-}
-export interface ServerTranscriptInterim {
-  type: "transcript:interim";
-  text: string;
-}
-export interface ServerTranscriptFinal {
-  type: "transcript:final";
-  text: string;
-}
-export interface ServerVisionAnalysis {
-  type: "vision:analysis";
-  analysis: VisionAnalysis;
-}
-export interface ServerThinking {
-  type: "ai:thinking";
-}
-export interface ServerQuestion {
-  type: "interview:question";
-  text: string;
-}
-export interface ServerComplete {
-  type: "interview:complete";
-  feedback: InterviewFeedback;
-}
-export interface ServerStatus {
-  type: "status";
-  state: "connected" | "starting" | "live" | "closing";
-  /** Interviewer display name, when known. */
-  message?: string;
-  /** Interviewer gender — drives the avatar variant on the client. */
-  gender?: Gender;
-  /** Panel mode: second interviewer info (name + gender). */
-  panelSecondary?: { name: string; gender: Gender };
-}
-/** Panel mode: emitted before each speaker segment so the client can switch avatar/name. */
-export interface ServerPanelSpeaker {
-  type: "panel:speaker";
+export interface InterviewerInfo {
   name: string;
   gender: Gender;
-}
-/** Panel mode: text spoken by each individual segment (for per-speaker transcript). */
-export interface ServerPanelSegment {
-  type: "panel:segment";
-  name: string;
-  text: string;
-}
-export interface ServerError {
-  type: "error";
-  message: string;
-  fatal?: boolean;
+  title: string;
 }
 
 export type ServerMessage =
-  | ServerSpeakingStart
-  | ServerSpeakingEnd
-  | ServerTranscriptInterim
-  | ServerTranscriptFinal
-  | ServerVisionAnalysis
-  | ServerThinking
-  | ServerQuestion
-  | ServerComplete
-  | ServerStatus
-  | ServerPanelSpeaker
-  | ServerPanelSegment
-  | ServerError;
+  | { type: "status"; state: "connected" | "starting" | "live" | "paused" | "closing" }
+  | { type: "session:ready"; interviewers: InterviewerInfo[]; maxMinutes: number }
+  | { type: "avatar:speaking:start"; speaker?: string }
+  | { type: "avatar:speaking:end" }
+  | { type: "interviewer:delta"; text: string }
+  | { type: "interviewer:line"; text: string; speaker: string }
+  | { type: "transcript:interim"; text: string }
+  | { type: "transcript:final"; text: string }
+  | { type: "candidate:committed"; text: string }
+  | { type: "vision:analysis"; analysis: VisionAnalysis }
+  | { type: "ai:thinking" }
+  | { type: "coach:hint"; text: string }
+  | { type: "interview:wrapping" }
+  | { type: "interview:complete"; feedback: InterviewFeedback; transcript: TranscriptTurn[] }
+  | { type: "error"; message: string; fatal?: boolean; code?: string };
 
 /* ─────────────────────────────── Constants ──────────────────────────────── */
 
-/** Microphone capture + Deepgram input rate. */
-export const MIC_SAMPLE_RATE = 16000;
-/** ElevenLabs output + browser playback rate. */
 export const TTS_SAMPLE_RATE = 24000;
-/**
- * How often a webcam frame is sent to Claude vision (the qualitative
- * "Claude's perspective"). Once a minute — ~10 calls in a 10-min interview.
- * Continuous measurable metrics come from the in-browser MediaPipe tracker
- * instead, so this can be sparse.
- */
+/** One qualitative vision read per minute; continuous metrics come from MediaPipe. */
 export const VISION_INTERVAL_MS = 60000;
-/** How often aggregated MediaPipe metrics are pushed to the server. */
 export const CV_METRICS_INTERVAL_MS = 20000;
-/** How often the live session is checkpointed to Supabase. */
-export const AUTOSAVE_INTERVAL_MS = 30000;
+export const REALTIME_PATH = "/realtime";
 
 /* ───────────────────────── Human-readable option maps ───────────────────── */
 
-export const INTERVIEW_TYPE_LABELS: Record<InterviewType, string> = {
-  behavioral: "Behavioral",
-  technical: "Technical",
-  mixed: "Mixed",
+export const FORMAT_META: Record<
+  PracticeFormat,
+  { label: string; blurb: string; minutes: DurationMinutes }
+> = {
+  full: { label: "Full mock interview", blurb: "The real thing, start to finish.", minutes: 20 },
+  drill: { label: "Quick drill", blurb: "Three sharp questions in five minutes.", minutes: 5 },
+  behavioral: { label: "Behavioral · STAR", blurb: "Stories that prove you can do the job.", minutes: 15 },
+  technical: { label: "Technical deep-dive", blurb: "Depth, trade-offs and how you think.", minutes: 20 },
+  pitch: { label: "Tell me about yourself", blurb: "Nail the first two minutes.", minutes: 5 },
+  salary: { label: "Salary negotiation", blurb: "Practice asking for what you're worth.", minutes: 10 },
+  weakspot: { label: "Fix my weak spot", blurb: "Targets your lowest-scoring skill.", minutes: 10 },
+  custom: { label: "Custom scenario", blurb: "Describe any interview and rehearse it.", minutes: 15 },
 };
 
 export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
-  entry: "Entry",
-  mid: "Mid",
-  senior: "Senior",
+  gentle: "Gentle",
+  standard: "Standard",
+  challenging: "Challenging",
   brutal: "Brutal",
 };
 
-export const PERSONALITY_LABELS: Record<Personality, string> = {
-  friendly: "Friendly",
+export const PERSONA_LABELS: Record<Persona, string> = {
+  warm: "Warm",
   neutral: "Neutral",
   tough: "Tough",
-  silent: "Silent",
+  silent: "Poker-faced",
+};
+
+export const LANGUAGE_LABELS: Record<InterviewLanguage, string> = {
+  en: "English",
+  multi: "English + mixed (Hinglish etc.)",
+  hi: "Hindi",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  pt: "Portuguese",
 };

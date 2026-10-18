@@ -26,14 +26,18 @@ export class TTSSession {
   readonly done: Promise<void>;
   private resolveDone!: () => void;
 
-  constructor(apiKey: string, voiceId: string, handlers: TTSHandlers) {
+  /** Characters sent for synthesis (for cost tracking). */
+  chars = 0;
+
+  constructor(apiKey: string, voiceId: string, handlers: TTSHandlers, language?: string) {
     this.done = new Promise<void>((resolve) => {
       this.resolveDone = resolve;
     });
 
     const url =
       `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input` +
-      `?model_id=eleven_turbo_v2&output_format=pcm_${TTS_SAMPLE_RATE}`;
+      `?model_id=${process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5"}&output_format=pcm_${TTS_SAMPLE_RATE}` +
+      (language && language !== "en" && language !== "multi" ? `&language_code=${language}` : "");
     this.ws = new WebSocket(url, { headers: { "xi-api-key": apiKey } });
 
     this.ws.on("open", () => {
@@ -104,6 +108,7 @@ export class TTSSession {
   /** Feed a chunk of text (should end with whitespace for clean phrasing). */
   sendText(text: string) {
     if (!text) return;
+    this.chars += text.trim().length;
     if (this.open) this.send({ text });
     else this.queue.push(text);
   }
@@ -127,10 +132,11 @@ export class TTSSession {
 export class ElevenLabsTTS {
   constructor(
     private apiKey: string,
-    private voiceId: string
+    private voiceId: string,
+    private language?: string
   ) {}
 
   createSession(handlers: TTSHandlers): TTSSession {
-    return new TTSSession(this.apiKey, this.voiceId, handlers);
+    return new TTSSession(this.apiKey, this.voiceId, handlers, this.language);
   }
 }

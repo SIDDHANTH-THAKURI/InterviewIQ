@@ -1,86 +1,52 @@
-import {
-  getAnthropic,
-  VISION_MODEL,
-  VISION_SYSTEM_PROMPT,
-  VISION_USER_PROMPT,
-  extractJson,
-} from "../lib/claude";
-import type {
-  EyeContact,
-  Expression,
-  Gesture,
-  Posture,
-  Presence,
-  Presentation,
-  VisionAnalysis,
-} from "../types/interview";
+import { anthropic, MODELS, parseJson } from "../lib/ai/claude";
+import { claudeCost } from "../lib/server/pricing";
+import type { VisionAnalysis } from "../types/interview";
 
-const PRESENCE: Presence[] = ["present", "absent"];
-const EYE: EyeContact[] = ["strong", "moderate", "weak", "none"];
-const POSTURE: Posture[] = ["confident", "neutral", "slouched", "tense"];
-const EXPR: Expression[] = ["calm", "nervous", "confused", "engaged", "blank"];
-const PRES: Presentation[] = ["professional", "casual", "unprofessional"];
-const GESTURE: Gesture[] = [
-  "none",
-  "waving",
-  "hand_raised",
-  "touching_face",
-  "looking_away",
-  "on_phone",
-  "shrugging",
-];
-
-function coerce<T extends string>(value: unknown, allowed: T[], fallback: T): T {
-  return typeof value === "string" && (allowed as string[]).includes(value)
-    ? (value as T)
-    : fallback;
-}
+const SCHEMA = {
+  type: "object",
+  properties: {
+    presence: { type: "string", enum: ["present", "absent"] },
+    eyeContact: { type: "string", enum: ["strong", "moderate", "weak", "none"] },
+    posture: { type: "string", enum: ["confident", "neutral", "slouched", "tense"] },
+    expression: { type: "string", enum: ["calm", "nervous", "confused", "engaged", "blank"] },
+    presentation: { type: "string", enum: ["professional", "casual", "unprofessional"] },
+    notes: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  required: ["presence", "eyeContact", "posture", "expression", "presentation", "notes"],
+  additionalProperties: false,
+};
 
 /**
- * Sends a single base64 JPEG webcam frame to Claude vision and returns a
- * structured read. Returns null on any failure so vision never blocks the
- * conversation flow.
+ * One qualitative read of a webcam frame. Returns null on any failure so vision
+ * never blocks the conversation.
  */
-export async function analyzeFrame(base64Jpeg: string): Promise<VisionAnalysis | null> {
+export async function analyzeFrame(base64Jpeg: string): Promise<{ analysis: VisionAnalysis | null; costUsd: number }> {
   try {
-    const resp = await getAnthropic().messages.create({
-      model: VISION_MODEL,
-      max_tokens: 256,
-      system: VISION_SYSTEM_PROMPT,
+    const msg = await anthropic().messages.create({
+      model: MODELS.fast,
+      max_tokens: 1500,
+      output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
+      system:
+        "You read single webcam frames of a candidate in a video interview, like a perceptive interviewer would. Be honest and specific, never judge appearance, ethnicity, or setting beyond professionalism.",
       messages: [
         {
           role: "user",
           content: [
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Jpeg } },
             {
-              type: "image",
-              source: { type: "base64", media_type: "image/jpeg", data: base64Jpeg },
+              type: "text",
+              text: 'Describe the candidate\'s on-camera presence. presence="absent" if no person is clearly visible. notes = one short specific observation (e.g. "glancing off-screen", "leaning in, engaged") or null.',
             },
-            { type: "text", text: VISION_USER_PROMPT },
           ],
         },
       ],
     });
-
-    const textBlock = resp.content.find((b) => b.type === "text");
-    const raw = textBlock && "text" in textBlock ? textBlock.text : "";
-    const parsed = extractJson<Partial<VisionAnalysis>>(raw);
-    if (!parsed) return null;
-
-    return {
-      presence: coerce(parsed.presence, PRESENCE, "present"),
-      eyeContact: coerce(parsed.eyeContact, EYE, "moderate"),
-      posture: coerce(parsed.posture, POSTURE, "neutral"),
-      expression: coerce(parsed.expression, EXPR, "calm"),
-      presentation: coerce(parsed.presentation, PRES, "professional"),
-      gesture: coerce(parsed.gesture, GESTURE, "none"),
-      notes:
-        typeof parsed.notes === "string" && parsed.notes.trim()
-          ? parsed.notes.trim()
-          : null,
-      ts: Date.now(),
-    };
+    const costUsd = claudeCost(MODELS.fast, msg.usage);
+    const text = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+    const parsed = parseJson<VisionAnalysis>(text);
+    return { analysis: parsed ? { ...parsed, ts: Date.now() } : null, costUsd };
   } catch (err) {
-    console.warn("[vision] analyze failed:", (err as Error).message);
-    return null;
+    console.warn("[vision]", (err as Error).message);
+    return { analysis: null, costUsd: 0 };
   }
 }
